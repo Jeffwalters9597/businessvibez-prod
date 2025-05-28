@@ -52,7 +52,7 @@ const View = () => {
             .from('qr_codes')
             .select('url, ad_space_id')
             .eq('id', qrId)
-            .single();
+            .maybeSingle();
 
           if (qrError) {
             console.error('QR code error:', qrError);
@@ -77,7 +77,7 @@ const View = () => {
             .from('ad_spaces')
             .select('*')
             .eq('id', adSpaceId)
-            .single();
+            .maybeSingle();
 
           if (adError) {
             console.error('Ad space error:', adError);
@@ -102,7 +102,10 @@ const View = () => {
               .eq('ad_space_id', adSpaceId)
               .maybeSingle();
 
-            if (!designError && adDesignData) {
+            if (designError) {
+              console.error('Ad design error:', designError);
+              // Don't throw error here, just continue without ad design data
+            } else if (adDesignData) {
               setAdDesign(adDesignData);
               
               // If this is a redirect ad design, use its redirect URL
@@ -113,20 +116,30 @@ const View = () => {
           }
 
           // Record ad space view
-          await supabase.rpc('increment_ad_space_views', {
-            space_id: adSpaceId
-          });
+          try {
+            await supabase.rpc('increment_ad_space_views', {
+              space_id: adSpaceId
+            });
+          } catch (viewError) {
+            console.error('Error recording view:', viewError);
+            // Continue even if view recording fails
+          }
         }
 
         // Record QR code scan
         if (qrId) {
-          await supabase.rpc('increment_qr_code_scans', {
-            qr_id: qrId,
-            ad_id: adSpaceId,
-            ip: 'anonymous',
-            agent: navigator.userAgent,
-            loc: {}
-          });
+          try {
+            await supabase.rpc('increment_qr_code_scans', {
+              qr_id: qrId,
+              ad_id: adSpaceId,
+              ip: 'anonymous',
+              agent: navigator.userAgent,
+              loc: {}
+            });
+          } catch (scanError) {
+            console.error('Error recording QR scan:', scanError);
+            // Continue even if scan recording fails
+          }
         }
 
         // Set redirect URL if we have one
