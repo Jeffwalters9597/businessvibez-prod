@@ -17,25 +17,23 @@ if (!supabaseAnonKey) {
 // Log Supabase initialization for debugging
 console.log(`Initializing Supabase with URL: ${supabaseUrl.substring(0, 15)}...`);
 
-// Initialize Supabase client with more verbose error handling
-try {
-  // Initialize Supabase client
-  export const supabase = createClient(
-    supabaseUrl,
-    supabaseAnonKey,
-    {
-      auth: {
-        persistSession: true,
-        autoRefreshToken: true,
-        detectSessionInUrl: true
-      }
+// Initialize Supabase client
+export const supabase = createClient(
+  supabaseUrl,
+  supabaseAnonKey,
+  {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true
     }
-  );
-  
+  }
+);
+
+try {
+  // Log successful initialization
   console.log('Supabase client initialized successfully');
 } catch (error) {
   console.error('Failed to initialize Supabase client:', error);
   throw error;
 }
-
-// The export has been fixed by using a single "export const" declaration above
