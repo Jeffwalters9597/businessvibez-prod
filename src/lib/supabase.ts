@@ -40,3 +40,5 @@ try {
   console.error('Failed to initialize Supabase client:', error);
   throw error;
 }
+
+export { supabase }
