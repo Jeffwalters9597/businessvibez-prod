@@ -25,6 +25,12 @@ interface AdDesign {
   };
 }
 
+// Function to validate UUID format
+const isValidUUID = (uuid: string): boolean => {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(uuid);
+};
+
 const View = () => {
   const [searchParams] = useSearchParams();
   const [adData, setAdData] = useState<AdSpace | null>(null);
@@ -48,10 +54,22 @@ const View = () => {
       try {
         addDebug("Starting data fetch");
         const qrId = searchParams.get('qr');
-        const adId = searchParams.get('ad');
+        let adId = searchParams.get('ad');
 
         if (!qrId && !adId) {
           throw new Error('Missing QR code or ad space ID');
+        }
+
+        // Validate UUID format for adId
+        if (adId && !isValidUUID(adId)) {
+          addDebug(`Invalid UUID format for adId: ${adId}`);
+          throw new Error('Invalid ad ID format');
+        }
+
+        // Validate UUID format for qrId
+        if (qrId && !isValidUUID(qrId)) {
+          addDebug(`Invalid UUID format for qrId: ${qrId}`);
+          throw new Error('Invalid QR code ID format');
         }
 
         addDebug(`Found params: qrId=${qrId}, adId=${adId}`);
