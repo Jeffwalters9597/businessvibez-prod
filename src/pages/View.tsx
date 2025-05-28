@@ -100,7 +100,7 @@ const View = () => {
               .from('ad_designs')
               .select('*')
               .eq('ad_space_id', adSpaceId)
-              .single();
+              .maybeSingle();
 
             if (!designError && adDesignData) {
               setAdDesign(adDesignData);
