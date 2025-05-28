@@ -34,6 +34,8 @@ const View = () => {
   const [redirectUrl, setRedirectUrl] = useState<string | null>(null);
   const [redirectCountdown, setRedirectCountdown] = useState(3);
   const [redirectClicked, setRedirectClicked] = useState(false);
+  const [imageLoaded, setImageLoaded] = useState(false);
+  const [imageError, setImageError] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -53,6 +55,7 @@ const View = () => {
           const { data: qrCode, error: qrError } = await supabase
             .from('qr_codes')
             .select('url, ad_space_id')
+            .eq('id', qrId)
             .maybeSingle();
 
           if (qrError) {
@@ -105,6 +108,7 @@ const View = () => {
                 .maybeSingle();
   
               if (!designError && adDesignData) {
+                console.log('Ad design data:', adDesignData);
                 setAdDesign(adDesignData);
                 
                 // If this is a redirect ad design, use its redirect URL
@@ -171,6 +175,19 @@ const View = () => {
     }
   }, [redirectUrl, redirectCountdown, redirectClicked]);
 
+  // Pre-load image to check if it's available
+  useEffect(() => {
+    if (adDesign?.image_url) {
+      const img = new Image();
+      img.onload = () => setImageLoaded(true);
+      img.onerror = () => {
+        console.error('Failed to load image:', adDesign.image_url);
+        setImageError(true);
+      };
+      img.src = adDesign.image_url;
+    }
+  }, [adDesign?.image_url]);
+
   // Manual redirect handler
   const handleRedirect = () => {
     if (!redirectUrl) return;
@@ -232,19 +249,37 @@ const View = () => {
   }
 
   // Custom ad with image display
-  if (adDesign?.image_url && !redirectUrl) {
+  if (adDesign?.image_url && !redirectUrl && !imageError) {
     return (
       <div 
-        className="min-h-screen flex items-center justify-center p-0 m-0 overflow-hidden"
+        className="min-h-screen flex flex-col items-center justify-center p-0 m-0 overflow-hidden"
         style={{ 
           backgroundColor: adData?.theme?.backgroundColor || '#f9fafb'
         }}
       >
-        <img 
-          src={adDesign.image_url}
-          alt={adData?.title || "Advertisement"}
-          className="max-w-full max-h-screen object-contain"
-        />
+        {!imageLoaded && (
+          <div className="w-16 h-16 border-4 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+        )}
+        
+        <div className={`w-full h-full ${!imageLoaded ? 'hidden' : 'block'}`}>
+          <img 
+            src={adDesign.image_url}
+            alt={adData?.title || "Advertisement"}
+            onLoad={() => setImageLoaded(true)}
+            onError={() => setImageError(true)}
+            className="w-full h-auto max-h-screen object-contain"
+            style={{
+              display: imageLoaded ? 'block' : 'none'
+            }}
+          />
+        </div>
+
+        {adData?.title && imageLoaded && (
+          <div className="absolute bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white p-4 text-center">
+            <h1 className="text-xl font-bold">{adData.title}</h1>
+            {adData.description && <p className="text-sm mt-1">{adData.description}</p>}
+          </div>
+        )}
       </div>
     );
   }
@@ -265,7 +300,7 @@ const View = () => {
         )}
         {redirectUrl && (
           <div>
-            <div className="text-lg md:text-xl p-4 bg-white bg-opacity-20 rounded-lg mb-4">
+            <div className="text-lg md:text-xl p-4 bg-white bg-opacity-20 rounded-lg mb-4 word-break-all">
               <a 
                 href={redirectUrl}
                 target="_blank"
@@ -293,10 +328,17 @@ const View = () => {
             )}
           </div>
         )}
-        {!redirectUrl && !adDesign?.image_url && (
-          <p className="text-lg font-medium p-4 bg-error-100 text-error-700 rounded-lg">
-            This ad doesn't have any content to display
-          </p>
+        {(!redirectUrl && (!adDesign?.image_url || imageError)) && (
+          <div>
+            <p className="text-lg font-medium p-4 bg-error-100 text-error-700 rounded-lg">
+              This ad doesn't have any content to display
+            </p>
+            {imageError && adDesign?.image_url && (
+              <p className="mt-4 text-sm text-gray-600">
+                There was an error loading the image for this ad.
+              </p>
+            )}
+          </div>
         )}
       </div>
     </div>
