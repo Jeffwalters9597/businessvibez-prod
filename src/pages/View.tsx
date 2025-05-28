@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import DebugPanel from '../components/ui/DebugPanel';
+import { getAdDesignByAdSpaceId, debugAdSpaceDetails, debugAdDesignsSchema } from '../AdDesignMapper';
 
 interface AdSpace {
   id: string;
@@ -166,15 +167,9 @@ const View = () => {
               // Try first to get ad design using ad_space_id
               try {
                 addDebug(`Fetching ad design for space: ${adSpaceId}`);
-                const { data: adDesignData, error: designError } = await supabase
-                  .from('ad_designs')
-                  .select('*')
-                  .eq('ad_space_id', adSpaceId)
-                  .maybeSingle();
-    
-                if (designError) {
-                  addDebug(`Design fetch error (by ad_space_id): ${designError.message}`);
-                } else if (adDesignData) {
+                const adDesignData = await getAdDesignByAdSpaceId(adSpaceId);
+                
+                if (adDesignData) {
                   addDebug(`Ad design found with image: ${adDesignData.image_url ? 'yes' : 'no'}`);
                   setAdDesign(adDesignData);
                   
@@ -184,27 +179,10 @@ const View = () => {
                     addDebug(`Using redirect URL from ad design: ${finalRedirectUrl}`);
                   }
                 } else {
-                  // Try alternate method - directly using adId as the ad_design id
-                  addDebug("No ad design found by ad_space_id, trying direct lookup");
-                  const { data: directDesignData, error: directDesignError } = await supabase
-                    .from('ad_designs')
-                    .select('*')
-                    .eq('id', adSpaceId)  // Try using the adId as the design id
-                    .maybeSingle();
-                    
-                  if (directDesignError) {
-                    addDebug(`Direct design fetch error: ${directDesignError.message}`);
-                  } else if (directDesignData) {
-                    addDebug(`Ad design found directly with image: ${directDesignData.image_url ? 'yes' : 'no'}`);
-                    setAdDesign(directDesignData);
-                    
-                    if (directDesignData.content?.redirectUrl) {
-                      finalRedirectUrl = directDesignData.content.redirectUrl;
-                      addDebug(`Using redirect URL from direct ad design: ${finalRedirectUrl}`);
-                    }
-                  } else {
-                    addDebug("No ad design found for this ad space through any method");
-                  }
+                  addDebug("No ad design found for this ad space through any method");
+                  
+                  // Extra debugging for this specific issue
+                  await debugAdSpaceDetails(adSpaceId);
                 }
               } catch (designQueryError: any) {
                 addDebug(`Error fetching design: ${designQueryError.message}`);
@@ -252,20 +230,7 @@ const View = () => {
         }
 
         // Debug database schema and data
-        try {
-          const { data: tableInfo, error: tableError } = await supabase
-            .from('ad_designs')
-            .select('id, ad_space_id, image_url')
-            .limit(5);
-            
-          if (tableError) {
-            addDebug(`Error fetching schema info: ${tableError.message}`);
-          } else {
-            addDebug(`Schema sample (ad_designs): ${JSON.stringify(tableInfo)}`);
-          }
-        } catch (schemaError: any) {
-          addDebug(`Schema query error: ${schemaError.message}`);
-        }
+        await debugAdDesignsSchema();
         
       } catch (err: any) {
         console.error('Error in View component:', err);

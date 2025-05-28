@@ -1,9 +1,7 @@
-<svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
-  <rect width="200" height="200" fill="#f0f0f0"/>
-  <path d="M80 60 L120 60 L120 140 L80 140 Z" fill="#d0d0d0"/>
-  <path d="M50 100 L80 60 L80 140 L50 100 Z" fill="#d0d0d0"/>
-  <path d="M150 100 L120 60 L120 140 L150 100 Z" fill="#d0d0d0"/>
-  <circle cx="100" cy="80" r="10" fill="#a0a0a0"/>
-  <path d="M80 120 C80 140 120 140 120 120" fill="none" stroke="#a0a0a0" stroke-width="5"/>
-  <text x="100" y="180" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#707070">Image not available</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300">
+  <rect width="400" height="300" fill="#f0f0f0"/>
+  <path d="M160,140 L240,140 L240,160 L160,160 Z" fill="#888888"/>
+  <path d="M190,110 L210,110 L210,190 L190,190 Z" fill="#888888"/>
+  <circle cx="200" cy="150" r="60" fill="none" stroke="#888888" stroke-width="8"/>
+  <text x="200" y="230" font-family="Arial, sans-serif" font-size="16" text-anchor="middle" fill="#666666">Image not available</text>
 </svg>
