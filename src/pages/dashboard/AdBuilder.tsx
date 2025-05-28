@@ -11,7 +11,6 @@ import {
   Save, 
   Eye,
   Link,
-  Wand2,
   QrCode as QrIcon,
   Edit
 } from 'lucide-react';
@@ -45,7 +44,6 @@ const AdBuilder = () => {
   const { user } = useAuthStore();
   const [viewMode, setViewMode] = useState<'list' | 'create' | 'detail' | 'edit'>('list');
   const [selectedDesign, setSelectedDesign] = useState<AdDesign | null>(null);
-  const [isGenerating, setIsGenerating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [savedDesigns, setSavedDesigns] = useState<AdDesign[]>([]);
@@ -55,7 +53,6 @@ const AdBuilder = () => {
     name: '',
     background: '#FFFFFF',
     redirectUrl: '',
-    businessType: ''
   });
 
   useEffect(() => {
@@ -73,7 +70,6 @@ const AdBuilder = () => {
         name: selectedDesign.name || '',
         background: selectedDesign.background || '#FFFFFF',
         redirectUrl: selectedDesign.content.redirectUrl || selectedDesign.ad_spaces?.content?.url || '',
-        businessType: ''
       });
     }
   }, [viewMode, selectedDesign]);
@@ -104,25 +100,6 @@ const AdBuilder = () => {
 
   const generateQrUrl = (adId: string) => {
     return `${window.location.origin}/view?ad=${adId}`;
-  };
-
-  const handleGenerateAI = async () => {
-    if (!adForm.businessType) {
-      toast.error('Please enter your business type');
-      return;
-    }
-
-    setIsGenerating(true);
-
-    try {
-      // Simulate AI generation
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      toast.success('AI content generated!');
-    } catch (error) {
-      toast.error('Failed to generate content');
-    } finally {
-      setIsGenerating(false);
-    }
   };
 
   const handleSaveAd = async () => {
@@ -247,7 +224,6 @@ const AdBuilder = () => {
         name: '',
         background: '#FFFFFF',
         redirectUrl: '',
-        businessType: ''
       });
       setAdMode('custom');
       setSelectedDesign(null);
@@ -580,27 +556,6 @@ const AdBuilder = () => {
 
             {adMode === 'custom' ? (
               <div className="space-y-4">
-                <Input
-                  label="Business Type"
-                  value={adForm.businessType}
-                  onChange={(e) => setAdForm({ ...adForm, businessType: e.target.value })}
-                  placeholder="e.g., Cafe, Salon, Gym"
-                />
-                
-                <div className="flex items-center justify-between">
-                  <h4 className="text-sm font-medium">AI Content Generation</h4>
-                  <Button
-                    onClick={handleGenerateAI}
-                    variant="outline"
-                    leftIcon={<Wand2 size={16} />}
-                    isLoading={isGenerating}
-                    disabled={!adForm.businessType}
-                    size="sm"
-                  >
-                    Generate Content
-                  </Button>
-                </div>
-                
                 <div className="space-y-2">
                   <label className="block text-sm font-medium text-gray-700">
                     Background Color
