@@ -1,11 +1,14 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import './index.css';
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <App />
+    <BrowserRouter>
+      <App />
+    </BrowserRouter>
   </React.StrictMode>
 );
 
@@ -13,8 +16,12 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 if ('serviceWorker' in navigator && 
     !window.location.hostname.includes('stackblitz') && 
     !window.location.hostname.includes('localhost')) {
-  // Import and register service worker
-  import('./ServiceWorker').then(({ register }) => {
-    register();
-  });
+  // Register service worker directly
+  navigator.serviceWorker.register('/ServiceWorker.js')
+    .then(registration => {
+      console.log('ServiceWorker registration successful with scope: ', registration.scope);
+    })
+    .catch(error => {
+      console.error('ServiceWorker registration failed: ', error);
+    });
 }
