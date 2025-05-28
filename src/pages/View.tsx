@@ -53,7 +53,6 @@ const View = () => {
           const { data: qrCode, error: qrError } = await supabase
             .from('qr_codes')
             .select('url, ad_space_id')
-            .eq('id', qrId)
             .maybeSingle();
 
           if (qrError) {
@@ -98,22 +97,24 @@ const View = () => {
             }
 
             // Get associated ad design for potential image
-            const { data: adDesignData, error: designError } = await supabase
-              .from('ad_designs')
-              .select('*')
-              .eq('ad_space_id', adSpaceId)
-              .maybeSingle();
-
-            if (designError) {
-              console.error('Ad design error:', designError);
-              // Don't throw error here, just continue without ad design data
-            } else if (adDesignData) {
-              setAdDesign(adDesignData);
-              
-              // If this is a redirect ad design, use its redirect URL
-              if (adDesignData.content?.redirectUrl) {
-                finalRedirectUrl = adDesignData.content.redirectUrl;
+            try {
+              const { data: adDesignData, error: designError } = await supabase
+                .from('ad_designs')
+                .select('*')
+                .eq('ad_space_id', adSpaceId)
+                .maybeSingle();
+  
+              if (!designError && adDesignData) {
+                setAdDesign(adDesignData);
+                
+                // If this is a redirect ad design, use its redirect URL
+                if (adDesignData.content?.redirectUrl) {
+                  finalRedirectUrl = adDesignData.content.redirectUrl;
+                }
               }
+            } catch (designQueryError) {
+              console.error('Error fetching ad design:', designQueryError);
+              // Don't throw error here, just continue without ad design data
             }
           }
 
@@ -172,20 +173,24 @@ const View = () => {
 
   // Manual redirect handler
   const handleRedirect = () => {
+    if (!redirectUrl) return;
+    
     try {
-      // Try to open in a new tab first
-      const newWindow = window.open(redirectUrl, '_blank');
-      
-      // If blocked or not successful, try to navigate in the same tab
-      if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
-        console.log('Opening in same window');
-        window.location.href = redirectUrl!;
-      }
+      // Use a simple anchor element to handle the navigation
+      // This avoids issues with service workers or iframe restrictions
+      const link = document.createElement('a');
+      link.href = redirectUrl;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
       
       setRedirectClicked(true);
     } catch (err) {
       console.error('Navigation error:', err);
-      setError('Unable to navigate to the destination. Please click the link manually.');
+      // If automatic navigation fails, show an error and encourage manual clicking
+      setError('Unable to navigate automatically. Please click the link below to continue.');
     }
   };
 
@@ -207,6 +212,19 @@ const View = () => {
           <div className="bg-error-100 text-error-700 p-6 rounded-lg">
             <p className="text-lg font-semibold mb-2">Error</p>
             <p>{error}</p>
+            {redirectUrl && (
+              <div className="mt-4">
+                <p className="mb-2">You can try visiting the link directly:</p>
+                <a 
+                  href={redirectUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary-500 hover:text-primary-700 underline break-all"
+                >
+                  {redirectUrl}
+                </a>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -247,11 +265,16 @@ const View = () => {
         )}
         {redirectUrl && (
           <div>
-            <div 
-              className="text-lg md:text-xl p-4 bg-white bg-opacity-20 rounded-lg mb-4 cursor-pointer hover:bg-opacity-30 transition-colors"
-              onClick={handleRedirect}
-            >
-              <p className="break-all">{redirectUrl}</p>
+            <div className="text-lg md:text-xl p-4 bg-white bg-opacity-20 rounded-lg mb-4">
+              <a 
+                href={redirectUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="break-all hover:underline"
+                onClick={() => setRedirectClicked(true)}
+              >
+                {redirectUrl}
+              </a>
             </div>
             
             {!redirectClicked ? (
@@ -261,11 +284,11 @@ const View = () => {
               >
                 {redirectCountdown > 0 
                   ? `Continue to destination (${redirectCountdown})`
-                  : 'Click to continue'}
+                  : 'Continue to destination'}
               </button>
             ) : (
               <p className="mt-4 text-sm text-gray-600">
-                If you're not redirected automatically, please click the link above.
+                If you're not automatically redirected, please click the link above.
               </p>
             )}
           </div>
