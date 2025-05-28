@@ -12,10 +12,16 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   </React.StrictMode>
 );
 
+// Enhanced checks for environments that don't support Service Workers
+const isWebContainerEnvironment = () => {
+  return window.location.hostname.includes('stackblitz') ||
+         window.location.hostname.includes('localhost') ||
+         window.location.href.includes('stackblitz.io') ||
+         window.self !== window.top; // Detects if running in an iframe
+};
+
 // Only register service worker if the browser supports it and we're not in a WebContainer environment
-if ('serviceWorker' in navigator && 
-    !window.location.hostname.includes('stackblitz') && 
-    !window.location.hostname.includes('localhost')) {
+if ('serviceWorker' in navigator && !isWebContainerEnvironment()) {
   // Register service worker directly
   navigator.serviceWorker.register('/ServiceWorker.js')
     .then(registration => {
