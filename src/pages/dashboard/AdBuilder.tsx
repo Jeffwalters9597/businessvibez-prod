@@ -322,6 +322,7 @@ const AdBuilder = () => {
 
         if (adError) {
           addDebug(`Ad design creation error: ${adError.message}`);
+          console.error('AD_BUILDER_SUPABASE_ERROR [ad_designs insert]:', JSON.stringify(adError, null, 2));
           throw adError;
         }
         
@@ -330,8 +331,8 @@ const AdBuilder = () => {
         addDebug(`Ad design has ad_space_id: ${adDesign.ad_space_id ? 'yes' : 'no'}`);
         
         // Log the successful save with detailed information
-        console.log('AD_BUILDER_SUPABASE_SUCCESS: Saved ad_design:', JSON.stringify(adDesign, null, 2));
-        console.log('AD_BUILDER_SAVED_DESIGN_DETAILS: ID=', adDesign.id, 'ad_space_id=', adDesign.ad_space_id, 'image_url=', adDesign.image_url);
+        console.log('AD_BUILDER_SUPABASE_SUCCESS [ad_designs insert]: Saved ad_design data:', JSON.stringify(adDesign, null, 2));
+        console.log('AD_BUILDER_VERIFY_LINK: ad_design.id =', adDesign.id, '; ad_design.ad_space_id =', adDesign.ad_space_id, '; ad_design.image_url =', adDesign.image_url);
         
         setSavedDesigns(prev => [adDesign, ...prev]);
         toast.success('Ad design created!');
@@ -347,7 +348,7 @@ const AdBuilder = () => {
     } catch (error: any) {
       console.error('Save error:', error);
       addDebug(`Save error: ${error.message}`);
-      console.error('AD_BUILDER_SUPABASE_ERROR: Failed to save ad_design:', JSON.stringify(error, null, 2));
+      console.error('AD_BUILDER_SUPABASE_ERROR [ad_designs insert]:', JSON.stringify(error, null, 2));
       toast.error(error.message || 'Failed to save design');
     } finally {
       setIsSaving(false);
