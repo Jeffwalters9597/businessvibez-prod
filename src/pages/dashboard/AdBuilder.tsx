@@ -281,21 +281,25 @@ const AdBuilder = () => {
       setViewMode('list');
       
       // Reset form
-      setAdForm({
-        name: '',
-        background: '#FFFFFF',
-        redirectUrl: '',
-        imageFile: null,
-        imagePreview: '',
-      });
-      setAdMode('custom');
-      setSelectedDesign(null);
+      resetForm();
     } catch (error: any) {
       console.error('Save error:', error);
       toast.error(error.message || 'Failed to save design');
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const resetForm = () => {
+    setAdForm({
+      name: '',
+      background: '#FFFFFF',
+      redirectUrl: '',
+      imageFile: null,
+      imagePreview: '',
+    });
+    setAdMode('custom');
+    setSelectedDesign(null);
   };
 
   const handleDeleteAd = async (id: string) => {
@@ -309,7 +313,7 @@ const AdBuilder = () => {
 
       setSavedDesigns(prev => prev.filter(design => design.id !== id));
       if (selectedDesign?.id === id) {
-        setSelectedDesign(null);
+        resetForm();
         setViewMode('list');
       }
       toast.success('Design deleted');
@@ -335,7 +339,13 @@ const AdBuilder = () => {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold">Ad Designs</h1>
-        <Button onClick={() => setViewMode('create')} leftIcon={<Plus size={16} />}>
+        <Button 
+          onClick={() => {
+            resetForm();
+            setViewMode('create');
+          }} 
+          leftIcon={<Plus size={16} />}
+        >
           Create New Ad
         </Button>
       </div>
@@ -349,7 +359,13 @@ const AdBuilder = () => {
         <Card className="text-center py-12">
           <CardContent>
             <p className="text-gray-600 mb-4">No ad designs yet. Create your first one!</p>
-            <Button onClick={() => setViewMode('create')} leftIcon={<Plus size={16} />}>
+            <Button 
+              onClick={() => {
+                resetForm();
+                setViewMode('create');
+              }} 
+              leftIcon={<Plus size={16} />}
+            >
               Create New Ad
             </Button>
           </CardContent>
