@@ -32,6 +32,8 @@ const View = () => {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [redirectUrl, setRedirectUrl] = useState<string | null>(null);
+  const [redirectCountdown, setRedirectCountdown] = useState(3);
+  const [redirectClicked, setRedirectClicked] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -157,16 +159,35 @@ const View = () => {
     fetchData();
   }, [searchParams]);
 
-  // Handle redirect after data is loaded
+  // Handle redirect countdown
   useEffect(() => {
-    if (redirectUrl) {
+    if (redirectUrl && !redirectClicked && redirectCountdown > 0) {
       const timer = setTimeout(() => {
-        window.location.href = redirectUrl;
-      }, 2000);
-
+        setRedirectCountdown(redirectCountdown - 1);
+      }, 1000);
+      
       return () => clearTimeout(timer);
     }
-  }, [redirectUrl]);
+  }, [redirectUrl, redirectCountdown, redirectClicked]);
+
+  // Manual redirect handler
+  const handleRedirect = () => {
+    try {
+      // Try to open in a new tab first
+      const newWindow = window.open(redirectUrl, '_blank');
+      
+      // If blocked or not successful, try to navigate in the same tab
+      if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
+        console.log('Opening in same window');
+        window.location.href = redirectUrl!;
+      }
+      
+      setRedirectClicked(true);
+    } catch (err) {
+      console.error('Navigation error:', err);
+      setError('Unable to navigate to the destination. Please click the link manually.');
+    }
+  };
 
   if (isLoading) {
     return (
@@ -226,10 +247,27 @@ const View = () => {
         )}
         {redirectUrl && (
           <div>
-            <p className="text-lg md:text-xl p-4 bg-white bg-opacity-20 rounded-lg break-all">
-              {redirectUrl}
-            </p>
-            <p className="mt-6 md:mt-8 text-sm opacity-75">Redirecting you shortly...</p>
+            <div 
+              className="text-lg md:text-xl p-4 bg-white bg-opacity-20 rounded-lg mb-4 cursor-pointer hover:bg-opacity-30 transition-colors"
+              onClick={handleRedirect}
+            >
+              <p className="break-all">{redirectUrl}</p>
+            </div>
+            
+            {!redirectClicked ? (
+              <button
+                onClick={handleRedirect}
+                className="mt-2 px-6 py-3 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors"
+              >
+                {redirectCountdown > 0 
+                  ? `Continue to destination (${redirectCountdown})`
+                  : 'Click to continue'}
+              </button>
+            ) : (
+              <p className="mt-4 text-sm text-gray-600">
+                If you're not redirected automatically, please click the link above.
+              </p>
+            )}
           </div>
         )}
         {!redirectUrl && !adDesign?.image_url && (
