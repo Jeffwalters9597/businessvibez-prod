@@ -303,19 +303,16 @@ const AdBuilder = () => {
                     />
                   )}
                   <div className="relative z-10 flex items-center justify-center h-full">
-                    {design.content.headline ? (
+                    {design.content.redirectUrl || design.ad_spaces?.content?.url ? (
                       <div className="text-center">
-                        <h3 className="text-lg font-bold mb-2 text-white\" style={{ textShadow: '0 2px 4px rgba(0,0,0,0.5)' }}>
-                          {design.content.headline}
-                        </h3>
-                        <p className="text-sm text-white" style={{ textShadow: '0 2px 4px rgba(0,0,0,0.5)' }}>
-                          {design.content.subheadline}
+                        <p className="text-sm text-white bg-black bg-opacity-30 p-2 rounded">
+                          {design.content.redirectUrl || design.ad_spaces?.content?.url}
                         </p>
                       </div>
                     ) : (
                       <div className="text-center">
                         <p className="text-sm text-white bg-black bg-opacity-30 p-2 rounded">
-                          {design.content.redirectUrl || design.ad_spaces?.content?.url || 'No redirect URL'}
+                          Custom Ad
                         </p>
                       </div>
                     )}
@@ -381,7 +378,7 @@ const AdBuilder = () => {
 
     const qrUrl = generateQrUrl(selectedDesign.ad_spaces.id);
     const redirectUrl = selectedDesign.content.redirectUrl || selectedDesign.ad_spaces.content.url;
-    const isRedirectMode = !!redirectUrl && !selectedDesign.content.headline;
+    const isRedirectMode = !!redirectUrl;
 
     return (
       <div className="space-y-6">
@@ -421,16 +418,13 @@ const AdBuilder = () => {
                   {isRedirectMode ? (
                     <div className="text-center">
                       <p className="text-white bg-black bg-opacity-30 p-3 rounded">
-                        {redirectUrl || 'No redirect URL'}
+                        {redirectUrl}
                       </p>
                     </div>
                   ) : (
                     <div className="text-center">
-                      <h3 className="text-xl font-bold mb-2 text-white" style={{ textShadow: '0 2px 4px rgba(0,0,0,0.5)' }}>
-                        {selectedDesign.content.headline}
-                      </h3>
-                      <p className="text-white" style={{ textShadow: '0 2px 4px rgba(0,0,0,0.5)' }}>
-                        {selectedDesign.content.subheadline}
+                      <p className="text-white bg-black bg-opacity-30 p-3 rounded">
+                        Custom Ad
                       </p>
                     </div>
                   )}
@@ -487,23 +481,13 @@ const AdBuilder = () => {
                   {isRedirectMode ? (
                     <>
                       <h3 className="text-sm font-medium text-gray-500">Redirect URL</h3>
-                      <p className="mt-1 break-all">{redirectUrl || 'None'}</p>
+                      <p className="mt-1 break-all">{redirectUrl}</p>
                     </>
                   ) : (
-                    <>
-                      {selectedDesign.content.headline && (
-                        <div>
-                          <h3 className="text-sm font-medium text-gray-500">Headline</h3>
-                          <p>{selectedDesign.content.headline}</p>
-                        </div>
-                      )}
-                      {selectedDesign.content.subheadline && (
-                        <div className="mt-2">
-                          <h3 className="text-sm font-medium text-gray-500">Subheadline</h3>
-                          <p>{selectedDesign.content.subheadline}</p>
-                        </div>
-                      )}
-                    </>
+                    <div>
+                      <h3 className="text-sm font-medium text-gray-500">Type</h3>
+                      <p>Custom Ad</p>
+                    </div>
                   )}
                 </div>
               </CardContent>
