@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
+import DebugPanel from '../components/ui/DebugPanel';
 
 interface AdSpace {
   id: string;
@@ -43,11 +44,36 @@ const View = () => {
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
   const [debug, setDebug] = useState<string[]>([]);
+  const [deviceInfo, setDeviceInfo] = useState<string>('');
 
   const addDebug = (message: string) => {
     console.log(message);
     setDebug(prev => [...prev, message]);
   };
+
+  useEffect(() => {
+    // Collect device info for debugging
+    const ua = navigator.userAgent;
+    const browser = 
+      ua.includes('Chrome') ? 'Chrome' :
+      ua.includes('Firefox') ? 'Firefox' :
+      ua.includes('Safari') && !ua.includes('Chrome') ? 'Safari' :
+      ua.includes('Edge') ? 'Edge' :
+      'Unknown';
+    
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+    const os = 
+      ua.includes('Android') ? 'Android' :
+      ua.includes('iPhone') || ua.includes('iPad') || ua.includes('iPod') ? 'iOS' :
+      ua.includes('Windows') ? 'Windows' :
+      ua.includes('Mac') ? 'Mac' :
+      ua.includes('Linux') ? 'Linux' :
+      'Unknown';
+    
+    const deviceInfoStr = `Device: ${isMobile ? 'Mobile' : 'Desktop'}, OS: ${os}, Browser: ${browser}`;
+    setDeviceInfo(deviceInfoStr);
+    addDebug(deviceInfoStr);
+  }, []);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -137,7 +163,7 @@ const View = () => {
                 addDebug(`Found redirect URL in ad space: ${finalRedirectUrl}`);
               }
 
-              // Get associated ad design for potential image
+              // Try first to get ad design using ad_space_id
               try {
                 addDebug(`Fetching ad design for space: ${adSpaceId}`);
                 const { data: adDesignData, error: designError } = await supabase
@@ -147,7 +173,7 @@ const View = () => {
                   .maybeSingle();
     
                 if (designError) {
-                  addDebug(`Design fetch error: ${designError.message}`);
+                  addDebug(`Design fetch error (by ad_space_id): ${designError.message}`);
                 } else if (adDesignData) {
                   addDebug(`Ad design found with image: ${adDesignData.image_url ? 'yes' : 'no'}`);
                   setAdDesign(adDesignData);
@@ -158,7 +184,27 @@ const View = () => {
                     addDebug(`Using redirect URL from ad design: ${finalRedirectUrl}`);
                   }
                 } else {
-                  addDebug("No ad design found for this ad space");
+                  // Try alternate method - directly using adId as the ad_design id
+                  addDebug("No ad design found by ad_space_id, trying direct lookup");
+                  const { data: directDesignData, error: directDesignError } = await supabase
+                    .from('ad_designs')
+                    .select('*')
+                    .eq('id', adSpaceId)  // Try using the adId as the design id
+                    .maybeSingle();
+                    
+                  if (directDesignError) {
+                    addDebug(`Direct design fetch error: ${directDesignError.message}`);
+                  } else if (directDesignData) {
+                    addDebug(`Ad design found directly with image: ${directDesignData.image_url ? 'yes' : 'no'}`);
+                    setAdDesign(directDesignData);
+                    
+                    if (directDesignData.content?.redirectUrl) {
+                      finalRedirectUrl = directDesignData.content.redirectUrl;
+                      addDebug(`Using redirect URL from direct ad design: ${finalRedirectUrl}`);
+                    }
+                  } else {
+                    addDebug("No ad design found for this ad space through any method");
+                  }
                 }
               } catch (designQueryError: any) {
                 addDebug(`Error fetching design: ${designQueryError.message}`);
@@ -204,6 +250,23 @@ const View = () => {
         } else {
           addDebug("No redirect URL found");
         }
+
+        // Debug database schema and data
+        try {
+          const { data: tableInfo, error: tableError } = await supabase
+            .from('ad_designs')
+            .select('id, ad_space_id, image_url')
+            .limit(5);
+            
+          if (tableError) {
+            addDebug(`Error fetching schema info: ${tableError.message}`);
+          } else {
+            addDebug(`Schema sample (ad_designs): ${JSON.stringify(tableInfo)}`);
+          }
+        } catch (schemaError: any) {
+          addDebug(`Schema query error: ${schemaError.message}`);
+        }
+        
       } catch (err: any) {
         console.error('Error in View component:', err);
         addDebug(`General error: ${err.message}`);
@@ -263,8 +326,8 @@ const View = () => {
     }
   };
 
-  // Show debug info in development
-  const showDebugInfo = import.meta.env.DEV && debug.length > 0;
+  // Show debug info in development or when ?debug=true is in URL
+  const showDebugInfo = import.meta.env.DEV || searchParams.get('debug') === 'true';
 
   if (isLoading) {
     return (
@@ -272,6 +335,7 @@ const View = () => {
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
           <p className="mt-4 text-gray-600">Loading...</p>
+          {showDebugInfo && debug.length > 0 && <DebugPanel messages={debug} />}
         </div>
       </div>
     );
@@ -299,16 +363,7 @@ const View = () => {
             )}
           </div>
           
-          {showDebugInfo && (
-            <div className="mt-4 p-4 bg-gray-100 rounded-lg text-left">
-              <p className="font-semibold mb-2">Debug Info:</p>
-              <ul className="text-xs space-y-1 max-h-48 overflow-y-auto">
-                {debug.map((msg, i) => (
-                  <li key={i}>{msg}</li>
-                ))}
-              </ul>
-            </div>
-          )}
+          {showDebugInfo && <DebugPanel messages={debug} />}
         </div>
       </div>
     );
@@ -353,16 +408,7 @@ const View = () => {
           </div>
         )}
         
-        {showDebugInfo && (
-          <div className="fixed top-2 right-2 p-2 bg-black bg-opacity-70 text-white text-xs rounded max-w-xs max-h-40 overflow-auto">
-            <p className="font-bold">Debug:</p>
-            <ul>
-              {debug.slice(-5).map((msg, i) => (
-                <li key={i}>{msg}</li>
-              ))}
-            </ul>
-          </div>
-        )}
+        {showDebugInfo && <DebugPanel messages={debug} />}
       </div>
     );
   }
@@ -422,16 +468,7 @@ const View = () => {
           </div>
         )}
         
-        {showDebugInfo && (
-          <div className="mt-4 p-4 bg-gray-100 rounded-lg text-left">
-            <p className="font-semibold mb-2">Debug Info:</p>
-            <ul className="text-xs space-y-1 max-h-48 overflow-y-auto">
-              {debug.map((msg, i) => (
-                <li key={i}>{msg}</li>
-              ))}
-            </ul>
-          </div>
-        )}
+        {showDebugInfo && <DebugPanel messages={debug} />}
       </div>
     </div>
   );
