@@ -59,6 +59,7 @@ const AdBuilder = () => {
     imagePreview: '',
   });
   const [isUploading, setIsUploading] = useState(false);
+  const [debugInfo, setDebugInfo] = useState<string[]>([]);
 
   useEffect(() => {
     fetchDesigns();
@@ -81,6 +82,11 @@ const AdBuilder = () => {
     }
   }, [viewMode, selectedDesign]);
 
+  const addDebug = (message: string) => {
+    console.log(`[AdBuilder Debug] ${message}`);
+    setDebugInfo(prev => [...prev, message]);
+  };
+
   const fetchDesigns = async () => {
     try {
       const { data, error } = await supabase
@@ -96,6 +102,7 @@ const AdBuilder = () => {
         .order('created_at', { ascending: false });
 
       if (error) throw error;
+      addDebug(`Fetched ${data?.length || 0} ad designs`);
       setSavedDesigns(data || []);
     } catch (error) {
       toast.error('Failed to load designs');
@@ -119,6 +126,7 @@ const AdBuilder = () => {
       imageFile: file,
       imagePreview: previewUrl
     }));
+    addDebug(`Image selected: ${file.name} (${Math.round(file.size / 1024)} KB)`);
   };
 
   const uploadImageToStorage = async (file: File): Promise<string | null> => {
@@ -130,22 +138,30 @@ const AdBuilder = () => {
     
     try {
       setIsUploading(true);
+      addDebug(`Uploading image to Supabase storage: ${fileName}`);
       
       // Upload image to Supabase Storage
       const { data, error } = await supabase.storage
         .from('ad_images')
         .upload(filePath, file);
       
-      if (error) throw error;
+      if (error) {
+        addDebug(`Storage upload error: ${error.message}`);
+        throw error;
+      }
+      
+      addDebug(`Image uploaded successfully. Path: ${data?.path}`);
       
       // Get public URL
       const { data: { publicUrl } } = supabase.storage
         .from('ad_images')
         .getPublicUrl(filePath);
       
+      addDebug(`Generated public URL: ${publicUrl}`);
       return publicUrl;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error uploading image:', error);
+      addDebug(`Upload failed: ${error.message}`);
       toast.error('Failed to upload image');
       return null;
     } finally {
@@ -165,15 +181,27 @@ const AdBuilder = () => {
       return;
     }
 
+    // For custom mode, an image is required
+    if (adMode === 'custom' && !adForm.imagePreview) {
+      toast.error('Please upload an image for your custom ad');
+      return;
+    }
+
     setIsSaving(true);
+    addDebug(`Saving ad design: ${adForm.name}, mode: ${adMode}`);
 
     try {
       // Upload image if there's a new file
       let imageUrl = adForm.imagePreview;
       if (adForm.imageFile) {
+        addDebug('Uploading new image file');
         const uploadedUrl = await uploadImageToStorage(adForm.imageFile);
         if (uploadedUrl) {
           imageUrl = uploadedUrl;
+          addDebug(`New image URL: ${imageUrl}`);
+        } else {
+          addDebug('Image upload failed');
+          throw new Error('Failed to upload image');
         }
       }
 
@@ -181,6 +209,7 @@ const AdBuilder = () => {
       const isEditing = viewMode === 'edit' && selectedDesign;
       
       // First create or update the ad space
+      addDebug(`${isEditing ? 'Updating' : 'Creating'} ad space`);
       const adSpaceData = {
         user_id: user?.id,
         title: adForm.name,
@@ -200,25 +229,37 @@ const AdBuilder = () => {
       
       if (isEditing && adSpaceId) {
         // Update existing ad space
+        addDebug(`Updating existing ad space ID: ${adSpaceId}`);
         const { error: adSpaceError } = await supabase
           .from('ad_spaces')
           .update(adSpaceData)
           .eq('id', adSpaceId);
           
-        if (adSpaceError) throw adSpaceError;
+        if (adSpaceError) {
+          addDebug(`Ad space update error: ${adSpaceError.message}`);
+          throw adSpaceError;
+        }
+        addDebug('Ad space updated successfully');
       } else {
         // Create new ad space
+        addDebug('Creating new ad space');
         const { data: adSpace, error: adSpaceError } = await supabase
           .from('ad_spaces')
           .insert([adSpaceData])
           .select()
           .single();
 
-        if (adSpaceError) throw adSpaceError;
+        if (adSpaceError) {
+          addDebug(`Ad space creation error: ${adSpaceError.message}`);
+          throw adSpaceError;
+        }
         adSpaceId = adSpace.id;
+        addDebug(`New ad space created with ID: ${adSpaceId}`);
       }
 
       // Then create or update the ad design
+      // CRITICAL: Always include image_url and ad_space_id in the record
+      addDebug(`${isEditing ? 'Updating' : 'Creating'} ad design with ad_space_id: ${adSpaceId}`);
       const adDesignData = {
         user_id: user?.id,
         name: adForm.name,
@@ -234,6 +275,7 @@ const AdBuilder = () => {
       
       if (isEditing) {
         // Update existing design
+        addDebug(`Updating existing ad design ID: ${selectedDesign.id}`);
         const { data: adDesign, error: adError } = await supabase
           .from('ad_designs')
           .update(adDesignData)
@@ -248,7 +290,10 @@ const AdBuilder = () => {
           `)
           .single();
           
-        if (adError) throw adError;
+        if (adError) {
+          addDebug(`Ad design update error: ${adError.message}`);
+          throw adError;
+        }
         
         // Update the design in the local state
         setSavedDesigns(prev => 
@@ -257,9 +302,11 @@ const AdBuilder = () => {
           )
         );
         
+        addDebug('Ad design updated successfully');
         toast.success('Ad design updated!');
       } else {
         // Create new design
+        addDebug('Creating new ad design');
         const { data: adDesign, error: adError } = await supabase
           .from('ad_designs')
           .insert([adDesignData])
@@ -273,10 +320,21 @@ const AdBuilder = () => {
           `)
           .single();
 
-        if (adError) throw adError;
+        if (adError) {
+          addDebug(`Ad design creation error: ${adError.message}`);
+          throw adError;
+        }
+        
+        addDebug(`New ad design created with ID: ${adDesign.id}`);
+        addDebug(`Ad design has image_url: ${adDesign.image_url ? 'yes' : 'no'}`);
+        addDebug(`Ad design has ad_space_id: ${adDesign.ad_space_id ? 'yes' : 'no'}`);
+        
         setSavedDesigns(prev => [adDesign, ...prev]);
         toast.success('Ad design created!');
       }
+      
+      // Verify data was saved correctly
+      await verifyAdDesignSaved(adSpaceId);
       
       setViewMode('list');
       
@@ -284,9 +342,48 @@ const AdBuilder = () => {
       resetForm();
     } catch (error: any) {
       console.error('Save error:', error);
+      addDebug(`Save error: ${error.message}`);
       toast.error(error.message || 'Failed to save design');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const verifyAdDesignSaved = async (adSpaceId: string) => {
+    try {
+      addDebug(`Verifying ad design was saved with ad_space_id: ${adSpaceId}`);
+      const { data, error } = await supabase
+        .from('ad_designs')
+        .select('id, image_url, ad_space_id')
+        .eq('ad_space_id', adSpaceId)
+        .maybeSingle();
+      
+      if (error) {
+        addDebug(`Verification query error: ${error.message}`);
+      } else if (data) {
+        addDebug(`Verification successful: Found ad design ID ${data.id}`);
+        addDebug(`Verification details: image_url=${data.image_url ? 'present' : 'missing'}, ad_space_id=${data.ad_space_id}`);
+      } else {
+        addDebug('Verification failed: No ad design found with this ad_space_id');
+        
+        // Try querying all ad designs to see if they exist
+        const { data: allDesigns, error: allError } = await supabase
+          .from('ad_designs')
+          .select('id, ad_space_id')
+          .limit(10);
+        
+        if (allError) {
+          addDebug(`Error querying all designs: ${allError.message}`);
+        } else {
+          addDebug(`Found ${allDesigns?.length || 0} total ad designs`);
+          if (allDesigns && allDesigns.length > 0) {
+            addDebug(`Sample ad_design IDs: ${allDesigns.map(d => d.id).join(', ')}`);
+            addDebug(`Sample ad_space_ids: ${allDesigns.map(d => d.ad_space_id).join(', ')}`);
+          }
+        }
+      }
+    } catch (err: any) {
+      addDebug(`Verification exception: ${err.message}`);
     }
   };
 
@@ -583,6 +680,16 @@ const AdBuilder = () => {
                     </div>
                   )}
                 </div>
+                <div>
+                  <h3 className="text-sm font-medium text-gray-500">Ad Space ID</h3>
+                  <p className="text-xs font-mono break-all">{selectedDesign.ad_spaces.id}</p>
+                </div>
+                {selectedDesign.image_url && (
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-500">Image URL</h3>
+                    <p className="text-xs font-mono break-all">{selectedDesign.image_url}</p>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -714,6 +821,24 @@ const AdBuilder = () => {
       {viewMode === 'detail' && renderAdDetail()}
       {viewMode === 'create' && renderAdCreator()}
       {viewMode === 'edit' && renderAdEditor()}
+      
+      {/* Debug info for development */}
+      {import.meta.env.DEV && debugInfo.length > 0 && (
+        <div className="fixed bottom-4 right-4 z-50 w-80 bg-black bg-opacity-80 text-white rounded-lg shadow-lg overflow-hidden">
+          <div className="p-2 border-b border-gray-700">
+            <h3 className="text-sm font-semibold">Debug Info</h3>
+          </div>
+          <div className="max-h-96 overflow-y-auto p-2">
+            <ul className="text-xs space-y-1">
+              {debugInfo.slice(-10).map((msg, i) => (
+                <li key={i} className="border-b border-gray-700 pb-1 break-words">
+                  {msg}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
