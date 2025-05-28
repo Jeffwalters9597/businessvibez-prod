@@ -17,9 +17,18 @@ interface AdSpace {
   };
 }
 
+interface AdDesign {
+  id: string;
+  image_url?: string;
+  content: {
+    redirectUrl?: string;
+  };
+}
+
 const View = () => {
   const [searchParams] = useSearchParams();
   const [adData, setAdData] = useState<AdSpace | null>(null);
+  const [adDesign, setAdDesign] = useState<AdDesign | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [redirectUrl, setRedirectUrl] = useState<string | null>(null);
@@ -80,8 +89,26 @@ const View = () => {
 
           if (adSpaceData) {
             setAdData(adSpaceData);
+            
+            // Check if there's a redirect URL in the ad space content
             if (adSpaceData.content?.url) {
               finalRedirectUrl = adSpaceData.content.url;
+            }
+
+            // Get associated ad design for potential image
+            const { data: adDesignData, error: designError } = await supabase
+              .from('ad_designs')
+              .select('*')
+              .eq('ad_space_id', adSpaceId)
+              .single();
+
+            if (!designError && adDesignData) {
+              setAdDesign(adDesignData);
+              
+              // If this is a redirect ad design, use its redirect URL
+              if (adDesignData.content?.redirectUrl) {
+                finalRedirectUrl = adDesignData.content.redirectUrl;
+              }
             }
           }
 
@@ -122,7 +149,7 @@ const View = () => {
     if (redirectUrl) {
       const timer = setTimeout(() => {
         window.location.href = redirectUrl;
-      }, 3000);
+      }, 2000);
 
       return () => clearTimeout(timer);
     }
@@ -152,42 +179,50 @@ const View = () => {
     );
   }
 
-  if (!adData) {
+  // Custom ad with image display
+  if (adDesign?.image_url && !redirectUrl) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
-        <div className="text-center w-full max-w-md mx-auto">
-          <div className="bg-warning-100 text-warning-700 p-6 rounded-lg">
-            <p className="text-lg font-semibold mb-2">No Ad Space Found</p>
-            <p>The requested ad space could not be found.</p>
-          </div>
-        </div>
+      <div 
+        className="min-h-screen flex items-center justify-center p-0 m-0 overflow-hidden"
+        style={{ 
+          backgroundColor: adData?.theme?.backgroundColor || '#f9fafb'
+        }}
+      >
+        <img 
+          src={adDesign.image_url}
+          alt={adData?.title || "Advertisement"}
+          className="max-w-full max-h-screen object-contain"
+        />
       </div>
     );
   }
 
+  // Redirect ad or ad space content display
   return (
     <div 
       className="min-h-screen flex items-center justify-center p-4"
       style={{ 
-        backgroundColor: adData.theme?.backgroundColor || '#f9fafb',
-        color: adData.theme?.textColor || '#111827'
+        backgroundColor: adData?.theme?.backgroundColor || '#f9fafb',
+        color: adData?.theme?.textColor || '#111827'
       }}
     >
       <div className="w-full max-w-2xl text-center">
-        <h1 className="text-2xl md:text-3xl font-bold mb-4">{adData.title}</h1>
-        {adData.description && (
+        <h1 className="text-2xl md:text-3xl font-bold mb-4">{adData?.title || "Advertisement"}</h1>
+        {adData?.description && (
           <p className="text-base md:text-lg mb-6 md:mb-8">{adData.description}</p>
         )}
-        {adData.content?.headline && (
-          <h2 className="text-xl md:text-2xl font-semibold mb-3 md:mb-4">
-            {adData.content.headline}
-          </h2>
-        )}
-        {adData.content?.subheadline && (
-          <p className="text-lg md:text-xl">{adData.content.subheadline}</p>
-        )}
         {redirectUrl && (
-          <p className="mt-6 md:mt-8 text-sm opacity-75">Redirecting you shortly...</p>
+          <div>
+            <p className="text-lg md:text-xl p-4 bg-white bg-opacity-20 rounded-lg break-all">
+              {redirectUrl}
+            </p>
+            <p className="mt-6 md:mt-8 text-sm opacity-75">Redirecting you shortly...</p>
+          </div>
+        )}
+        {!redirectUrl && !adDesign?.image_url && (
+          <p className="text-lg font-medium p-4 bg-error-100 text-error-700 rounded-lg">
+            This ad doesn't have any content to display
+          </p>
         )}
       </div>
     </div>
