@@ -17,13 +17,10 @@ if (!supabaseAnonKey) {
 // Log Supabase initialization for debugging
 console.log(`Initializing Supabase with URL: ${supabaseUrl.substring(0, 15)}...`);
 
-// Declare the Supabase client
-export let supabase;
-
 // Initialize Supabase client with more verbose error handling
 try {
   // Initialize Supabase client
-  supabase = createClient(
+  export const supabase = createClient(
     supabaseUrl,
     supabaseAnonKey,
     {
@@ -41,6 +38,4 @@ try {
   throw error;
 }
 
-// The duplicate export has been removed
-
-export { supabase }
+// The export has been fixed by using a single "export const" declaration above
