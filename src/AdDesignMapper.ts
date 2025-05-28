@@ -18,30 +18,31 @@ interface AdDesign {
 }
 
 /**
- * Fetch an ad design by its ad space ID
+ * Fetch an ad design by its ad space ID using multiple fallback strategies
  */
 export const getAdDesignByAdSpaceId = async (adSpaceId: string): Promise<AdDesign | null> => {
   console.log(`Fetching ad design for ad space ID: ${adSpaceId}`);
   
   try {
-    // First try to find by ad_space_id (this is the expected relationship)
-    const { data, error } = await supabase
+    // Strategy 1: First try to find by ad_space_id (this is the expected relationship)
+    console.log("Strategy 1: Trying ad_space_id foreign key relationship");
+    const { data: relationData, error: relationError } = await supabase
       .from('ad_designs')
       .select('*')
       .eq('ad_space_id', adSpaceId)
       .maybeSingle();
     
-    if (error) {
-      console.error('Error fetching ad design by ad_space_id:', error);
-      return null;
+    if (relationError) {
+      console.error('Error in Strategy 1:', relationError);
+    } else if (relationData) {
+      console.log('Found ad design by ad_space_id relation');
+      return relationData;
+    } else {
+      console.log('No results from Strategy 1');
     }
     
-    if (data) {
-      console.log('Found ad design by ad_space_id');
-      return data;
-    }
-    
-    // If not found, try to find by ID (fallback)
+    // Strategy 2: Try to find by direct ID match
+    console.log("Strategy 2: Trying direct ID match");
     const { data: directData, error: directError } = await supabase
       .from('ad_designs')
       .select('*')
@@ -49,16 +50,28 @@ export const getAdDesignByAdSpaceId = async (adSpaceId: string): Promise<AdDesig
       .maybeSingle();
     
     if (directError) {
-      console.error('Error fetching ad design by direct ID:', directError);
-      return null;
-    }
-    
-    if (directData) {
+      console.error('Error in Strategy 2:', directError);
+    } else if (directData) {
       console.log('Found ad design by direct ID match');
       return directData;
+    } else {
+      console.log('No results from Strategy 2');
     }
     
-    console.log('No ad design found for ad space ID');
+    // Strategy 3: Try broader query to see if any ad designs exist at all
+    console.log("Strategy 3: Checking for any ad designs linked to this space");
+    const { data: anyData, error: anyError } = await supabase
+      .from('ad_designs')
+      .select('*')
+      .limit(1);
+    
+    if (anyError) {
+      console.error('Error in Strategy 3:', anyError);
+    } else {
+      console.log(`Found ${anyData?.length || 0} total ad designs in the table`);
+    }
+    
+    console.log('No ad design found for ad space ID after all strategies');
     return null;
   } catch (error) {
     console.error('Exception in getAdDesignByAdSpaceId:', error);
@@ -71,13 +84,26 @@ export const getAdDesignByAdSpaceId = async (adSpaceId: string): Promise<AdDesig
  */
 export const debugAdDesignsSchema = async (): Promise<void> => {
   try {
+    // First get column info
+    const { data: columnsData, error: columnsError } = await supabase
+      .from('ad_designs')
+      .select()
+      .limit(1);
+    
+    if (columnsError) {
+      console.error('Error fetching schema info:', columnsError);
+    } else if (columnsData && columnsData.length > 0) {
+      console.log('Schema columns:', Object.keys(columnsData[0]));
+    }
+    
+    // Then get a few sample rows
     const { data, error } = await supabase
       .from('ad_designs')
       .select('id, ad_space_id, image_url')
       .limit(5);
     
     if (error) {
-      console.error('Error fetching schema info:', error);
+      console.error('Error fetching sample data:', error);
     } else {
       console.log('Schema sample (ad_designs):', JSON.stringify(data));
     }
@@ -102,16 +128,52 @@ export const debugAdSpaceDetails = async (adSpaceId: string): Promise<void> => {
     
     if (adSpaceError) {
       console.error('Error fetching ad space:', adSpaceError);
-      return;
+    } else if (adSpace) {
+      console.log('Ad space details:', adSpace);
+      
+      // Check which columns exist
+      console.log('Ad space columns:', Object.keys(adSpace));
+      
+      // Try to find any ad designs that might be linked
+      const { data: linkData, error: linkError } = await supabase
+        .from('ad_designs')
+        .select('*')
+        .eq('ad_space_id', adSpaceId);
+      
+      if (linkError) {
+        console.error('Error checking linked designs:', linkError);
+      } else {
+        console.log(`Found ${linkData?.length || 0} linked designs`);
+        if (linkData && linkData.length > 0) {
+          console.log('First linked design:', linkData[0]);
+        }
+      }
+    } else {
+      console.log('No ad space found with ID:', adSpaceId);
     }
-    
-    console.log('Ad space details:', adSpace);
-    
-    // Get linked ad design
-    const adDesign = await getAdDesignByAdSpaceId(adSpaceId);
-    console.log('Linked ad design:', adDesign);
-    
   } catch (error) {
     console.error('Exception in debugAdSpaceDetails:', error);
+  }
+};
+
+/**
+ * Additional debugging function that helps diagnose Supabase connection issues
+ */
+export const debugSupabaseConnection = async (): Promise<void> => {
+  console.log('Testing Supabase connection...');
+  
+  try {
+    // Check that we can connect at all
+    const { data, error } = await supabase
+      .from('ad_spaces')
+      .select('count(*)', { count: 'exact', head: true });
+    
+    if (error) {
+      console.error('Connection test failed:', error);
+    } else {
+      console.log('Connection test succeeded, count:', data);
+    }
+  } catch (error) {
+    console.error('Supabase connection error:', error);
   }
 };
