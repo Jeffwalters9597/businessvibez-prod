@@ -41,4 +41,4 @@ try {
   throw error;
 }
 
-export { supabase }
+// The duplicate export has been removed
