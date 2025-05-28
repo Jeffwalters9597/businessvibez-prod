@@ -381,11 +381,13 @@ const AdBuilder = () => {
                         </p>
                       </div>
                     ) : (
-                      <div className="text-center">
-                        <p className="text-sm text-white bg-black bg-opacity-30 p-2 rounded">
-                          Custom Ad
-                        </p>
-                      </div>
+                      design.image_url && (
+                        <div className="text-center">
+                          <p className="text-sm text-white bg-black bg-opacity-30 p-2 rounded">
+                            Custom Ad
+                          </p>
+                        </div>
+                      )
                     )}
                   </div>
                 </div>
@@ -486,19 +488,19 @@ const AdBuilder = () => {
                   />
                 )}
                 <div className="relative z-10 flex items-center justify-center h-full">
-                  {isRedirectMode ? (
+                  {isRedirectMode && redirectUrl ? (
                     <div className="text-center">
                       <p className="text-white bg-black bg-opacity-30 p-3 rounded">
                         {redirectUrl}
                       </p>
                     </div>
-                  ) : (
+                  ) : selectedDesign.image_url ? (
                     <div className="text-center">
                       <p className="text-white bg-black bg-opacity-30 p-3 rounded">
                         Custom Ad
                       </p>
                     </div>
-                  )}
+                  ) : null}
                 </div>
               </div>
             </CardContent>
@@ -552,7 +554,11 @@ const AdBuilder = () => {
                   {isRedirectMode ? (
                     <>
                       <h3 className="text-sm font-medium text-gray-500">Redirect URL</h3>
-                      <p className="mt-1 break-all">{redirectUrl}</p>
+                      {redirectUrl ? (
+                        <p className="mt-1 break-all">{redirectUrl}</p>
+                      ) : (
+                        <p className="mt-1 text-gray-400 italic">No redirect URL set</p>
+                      )}
                     </>
                   ) : (
                     <div>
