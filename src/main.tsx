@@ -5,18 +5,18 @@ import App from './App.tsx';
 import './index.css';
 import { Toaster } from 'react-hot-toast';
 
-// Register service worker for better mobile experience
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/ServiceWorker.js')
-      .then(registration => {
-        console.log('ServiceWorker registration successful with scope: ', registration.scope);
-      })
-      .catch(error => {
-        console.error('ServiceWorker registration failed: ', error);
-      });
-  });
-}
+// Service Worker registration is commented out due to lack of support in this environment
+// if ('serviceWorker' in navigator) {
+//   window.addEventListener('load', () => {
+//     navigator.serviceWorker.register('/ServiceWorker.js')
+//       .then(registration => {
+//         console.log('ServiceWorker registration successful with scope: ', registration.scope);
+//       })
+//       .catch(error => {
+//         console.error('ServiceWorker registration failed: ', error);
+//       });
+//   });
+// }
 
 // Log device information for debugging
 const logDeviceInfo = () => {
