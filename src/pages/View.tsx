@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import DebugPanel from '../components/ui/DebugPanel';
@@ -46,6 +46,8 @@ const View = () => {
   const [imageError, setImageError] = useState(false);
   const [debug, setDebug] = useState<string[]>([]);
   const [deviceInfo, setDeviceInfo] = useState<string>('');
+  const [isMobile, setIsMobile] = useState(false);
+  const imageRef = useRef<HTMLImageElement>(null);
 
   const addDebug = (message: string) => {
     console.log(message);
@@ -62,7 +64,9 @@ const View = () => {
       ua.includes('Edge') ? 'Edge' :
       'Unknown';
     
-    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+    const mobileDetected = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+    setIsMobile(mobileDetected);
+    
     const os = 
       ua.includes('Android') ? 'Android' :
       ua.includes('iPhone') || ua.includes('iPad') || ua.includes('iPod') ? 'iOS' :
@@ -71,7 +75,7 @@ const View = () => {
       ua.includes('Linux') ? 'Linux' :
       'Unknown';
     
-    const deviceInfoStr = `Device: ${isMobile ? 'Mobile' : 'Desktop'}, OS: ${os}, Browser: ${browser}`;
+    const deviceInfoStr = `Device: ${mobileDetected ? 'Mobile' : 'Desktop'}, OS: ${os}, Browser: ${browser}`;
     setDeviceInfo(deviceInfoStr);
     addDebug(deviceInfoStr);
   }, []);
@@ -178,6 +182,13 @@ const View = () => {
                     finalRedirectUrl = adDesignData.content.redirectUrl;
                     addDebug(`Using redirect URL from ad design: ${finalRedirectUrl}`);
                   }
+
+                  // Preload the image if available (especially important for mobile)
+                  if (adDesignData.image_url) {
+                    addDebug(`Pre-fetching image: ${adDesignData.image_url}`);
+                    const imgCache = new Image();
+                    imgCache.src = adDesignData.image_url;
+                  }
                 } else {
                   addDebug("No ad design found for this ad space through any method");
                   
@@ -254,26 +265,54 @@ const View = () => {
       
       return () => clearTimeout(timer);
     }
+    
+    // Auto redirect when countdown reaches zero
+    if (redirectUrl && !redirectClicked && redirectCountdown === 0) {
+      handleRedirect();
+    }
   }, [redirectUrl, redirectCountdown, redirectClicked]);
 
-  // Pre-load image to check if it's available
+  // Pre-load image with better error handling specifically for mobile
   useEffect(() => {
     if (adDesign?.image_url) {
       addDebug(`Preloading image: ${adDesign.image_url}`);
-      const img = new Image();
-      img.onload = () => {
-        addDebug("Image loaded successfully");
-        setImageLoaded(true);
-      };
-      img.onerror = () => {
-        addDebug(`Failed to load image: ${adDesign.image_url}`);
-        setImageError(true);
-      };
-      img.src = adDesign.image_url;
+      
+      // For mobile, we'll use a different approach to load images
+      if (isMobile) {
+        // Create object URL to prevent CORS issues
+        const fetchImage = async () => {
+          try {
+            const response = await fetch(adDesign.image_url!, { mode: 'cors' });
+            if (!response.ok) {
+              throw new Error(`Failed to load image: ${response.status}`);
+            }
+            
+            addDebug("Image fetch successful");
+            setImageLoaded(true);
+          } catch (err) {
+            addDebug(`Mobile image fetch error: ${err}`);
+            setImageError(true);
+          }
+        };
+        
+        fetchImage();
+      } else {
+        // Desktop approach
+        const img = new Image();
+        img.onload = () => {
+          addDebug("Image loaded successfully");
+          setImageLoaded(true);
+        };
+        img.onerror = () => {
+          addDebug(`Failed to load image: ${adDesign.image_url}`);
+          setImageError(true);
+        };
+        img.src = adDesign.image_url;
+      }
     } else {
       addDebug("No image URL to preload");
     }
-  }, [adDesign?.image_url]);
+  }, [adDesign?.image_url, isMobile]);
 
   // Manual redirect handler
   const handleRedirect = () => {
@@ -291,6 +330,18 @@ const View = () => {
     }
   };
 
+  // Enhanced image error handler for mobile
+  const handleImageError = () => {
+    addDebug("Image error triggered by img onError event");
+    setImageError(true);
+  };
+
+  // Handle image load success
+  const handleImageLoad = () => {
+    addDebug("Image load triggered by img onLoad event");
+    setImageLoaded(true);
+  };
+
   // Show debug info in development or when ?debug=true is in URL
   const showDebugInfo = import.meta.env.DEV || searchParams.get('debug') === 'true';
 
@@ -300,6 +351,7 @@ const View = () => {
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
           <p className="mt-4 text-gray-600">Loading...</p>
+          <p className="text-xs text-gray-500 mt-2">{deviceInfo}</p>
           {showDebugInfo && debug.length > 0 && <DebugPanel messages={debug} />}
         </div>
       </div>
@@ -334,7 +386,7 @@ const View = () => {
     );
   }
 
-  // Custom ad with image display
+  // Mobile-optimized custom ad with image display
   if (adDesign?.image_url && !redirectUrl) {
     return (
       <div 
@@ -357,11 +409,13 @@ const View = () => {
             />
           ) : (
             <img 
+              ref={imageRef}
               src={adDesign.image_url}
               alt={adData?.title || "Advertisement"}
-              onLoad={() => setImageLoaded(true)}
-              onError={() => setImageError(true)}
+              onLoad={handleImageLoad}
+              onError={handleImageError}
               className={`w-full h-auto max-h-screen object-contain ${!imageLoaded ? 'hidden' : 'block'}`}
+              crossOrigin="anonymous"
             />
           )}
         </div>
@@ -378,7 +432,7 @@ const View = () => {
     );
   }
 
-  // Redirect ad or ad space content display
+  // Mobile-optimized redirect ad or ad space content display
   return (
     <div 
       className="min-h-screen flex items-center justify-center p-4"

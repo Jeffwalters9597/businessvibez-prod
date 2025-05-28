@@ -78,6 +78,18 @@ export const getAdDesignByAdSpaceId = async (adSpaceId: string): Promise<AdDesig
         console.error('Error in Strategy 3 user query:', userError);
       } else if (userDesigns && userDesigns.length > 0) {
         console.log('Found ad design by user match:', userDesigns[0].id);
+        
+        // Important: If we found a design, let's try to update its ad_space_id for future lookups
+        try {
+          await supabase
+            .from('ad_designs')
+            .update({ ad_space_id: adSpaceId })
+            .eq('id', userDesigns[0].id);
+          console.log('Updated ad_space_id for this design for future lookups');
+        } catch (updateError) {
+          console.error('Error updating ad_space_id:', updateError);
+        }
+        
         return userDesigns[0];
       }
     }
@@ -100,6 +112,21 @@ export const getAdDesignByAdSpaceId = async (adSpaceId: string): Promise<AdDesig
           ad_space_id: d.ad_space_id,
           has_image: !!d.image_url
         })))}`);
+        
+        // As a last resort, try to link the most recent design with this ad space
+        // This is risky but might help recover from a broken state
+        if (anyData.length > 0 && !anyData[0].ad_space_id) {
+          try {
+            await supabase
+              .from('ad_designs')
+              .update({ ad_space_id: adSpaceId })
+              .eq('id', anyData[0].id);
+            console.log('Emergency fix: Linked most recent design to this ad space');
+            return anyData[0];
+          } catch (updateError) {
+            console.error('Error in emergency fix:', updateError);
+          }
+        }
       }
     }
     
@@ -130,13 +157,17 @@ export const debugAdDesignsSchema = async (): Promise<void> => {
       console.log('No data found for schema inspection');
       
       // Try a raw query to check if the table exists
-      const { data: tableCheck, error: tableError } = await supabase
-        .rpc('check_table_exists', { table_name: 'ad_designs' });
-        
-      if (tableError) {
-        console.error('Error checking table existence:', tableError);
-      } else {
-        console.log('Table existence check:', tableCheck);
+      try {
+        const { data: tableCheck, error: tableError } = await supabase
+          .rpc('check_table_exists', { table_name: 'ad_designs' });
+          
+        if (tableError) {
+          console.error('Error checking table existence:', tableError);
+        } else {
+          console.log('Table existence check:', tableCheck);
+        }
+      } catch (rpcError) {
+        console.error('RPC error (expected if function not defined):', rpcError);
       }
     }
     
@@ -212,6 +243,22 @@ export const debugAdSpaceDetails = async (adSpaceId: string): Promise<void> => {
           console.log(`Found ${userDesigns?.length || 0} designs by same user`);
           if (userDesigns && userDesigns.length > 0) {
             console.log('User designs:', JSON.stringify(userDesigns));
+            
+            // If there are designs by this user but none linked to this ad space,
+            // try to link the most recent one automatically
+            if (userDesigns.length > 0 && 
+                linkData && linkData.length === 0 && 
+                !userDesigns[0].ad_space_id) {
+              try {
+                await supabase
+                  .from('ad_designs')
+                  .update({ ad_space_id: adSpaceId })
+                  .eq('id', userDesigns[0].id);
+                console.log('Automatically linked most recent design to this ad space');
+              } catch (updateError) {
+                console.error('Error in auto-linking:', updateError);
+              }
+            }
           }
         }
       }

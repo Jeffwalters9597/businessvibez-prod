@@ -119,6 +119,22 @@ const AdBuilder = () => {
   const handleImageUpload = async (file: File) => {
     if (!file) return;
     
+    // Check file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Image too large. Maximum size is 5MB.');
+      return;
+    }
+    
+    // Check dimensions
+    try {
+      const imageDimensions = await getImageDimensions(file);
+      if (imageDimensions.width > 2500 || imageDimensions.height > 2500) {
+        toast.warning('Image is very large. Consider using a smaller image for better performance.');
+      }
+    } catch (err) {
+      console.error("Couldn't check image dimensions:", err);
+    }
+    
     // Create object URL for preview
     const previewUrl = URL.createObjectURL(file);
     setAdForm(prev => ({
@@ -127,6 +143,22 @@ const AdBuilder = () => {
       imagePreview: previewUrl
     }));
     addDebug(`Image selected: ${file.name} (${Math.round(file.size / 1024)} KB)`);
+  };
+
+  // Helper function to get image dimensions
+  const getImageDimensions = (file: File): Promise<{width: number, height: number}> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        resolve({ width: img.width, height: img.height });
+        URL.revokeObjectURL(img.src);
+      };
+      img.onerror = () => {
+        reject(new Error("Failed to load image"));
+        URL.revokeObjectURL(img.src);
+      };
+      img.src = URL.createObjectURL(file);
+    });
   };
 
   const uploadImageToStorage = async (file: File): Promise<string | null> => {
@@ -140,10 +172,21 @@ const AdBuilder = () => {
       setIsUploading(true);
       addDebug(`Uploading image to Supabase storage: ${fileName}`);
       
+      // Compress the image if it's very large
+      let fileToUpload = file;
+      if (file.size > 2 * 1024 * 1024) { // If over 2MB
+        try {
+          fileToUpload = await compressImage(file);
+          addDebug(`Compressed image from ${Math.round(file.size/1024)}KB to ${Math.round(fileToUpload.size/1024)}KB`);
+        } catch (compressError) {
+          addDebug(`Image compression failed: ${compressError}. Using original image.`);
+        }
+      }
+      
       // Upload image to Supabase Storage
       const { data, error } = await supabase.storage
         .from('ad_images')
-        .upload(filePath, file);
+        .upload(filePath, fileToUpload);
       
       if (error) {
         addDebug(`Storage upload error: ${error.message}`);
@@ -167,6 +210,71 @@ const AdBuilder = () => {
     } finally {
       setIsUploading(false);
     }
+  };
+
+  // Helper function to compress images
+  const compressImage = (file: File): Promise<File> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target?.result as string;
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let width = img.width;
+          let height = img.height;
+          
+          // Calculate new dimensions while maintaining aspect ratio
+          const MAX_WIDTH = 1200;
+          const MAX_HEIGHT = 1200;
+          
+          if (width > height) {
+            if (width > MAX_WIDTH) {
+              height *= MAX_WIDTH / width;
+              width = MAX_WIDTH;
+            }
+          } else {
+            if (height > MAX_HEIGHT) {
+              width *= MAX_HEIGHT / height;
+              height = MAX_HEIGHT;
+            }
+          }
+          
+          canvas.width = width;
+          canvas.height = height;
+          
+          const ctx = canvas.getContext('2d');
+          ctx?.drawImage(img, 0, 0, width, height);
+          
+          // Convert to blob with reduced quality
+          canvas.toBlob(
+            (blob) => {
+              if (!blob) {
+                reject(new Error('Canvas to Blob conversion failed'));
+                return;
+              }
+              
+              // Create a new file from the blob
+              const newFile = new File([blob], file.name, {
+                type: 'image/jpeg',
+                lastModified: Date.now(),
+              });
+              
+              resolve(newFile);
+            },
+            'image/jpeg',
+            0.8 // Quality parameter (0.8 = 80% quality)
+          );
+        };
+        img.onerror = () => {
+          reject(new Error('Error loading image for compression'));
+        };
+      };
+      reader.onerror = () => {
+        reject(new Error('Error reading file'));
+      };
+    });
   };
 
   const handleSaveAd = async () => {
@@ -546,6 +654,8 @@ const AdBuilder = () => {
                       src={design.image_url} 
                       alt="" 
                       className="absolute inset-0 w-full h-full object-cover"
+                      loading="lazy"
+                      crossOrigin="anonymous"
                     />
                   )}
                   <div className="relative z-10 flex items-center justify-center h-full">
@@ -660,6 +770,8 @@ const AdBuilder = () => {
                     src={selectedDesign.image_url} 
                     alt="" 
                     className="absolute inset-0 w-full h-full object-cover"
+                    loading="lazy"
+                    crossOrigin="anonymous"
                   />
                 )}
                 <div className="relative z-10 flex items-center justify-center h-full">
