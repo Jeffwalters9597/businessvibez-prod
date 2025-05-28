@@ -5,6 +5,7 @@ import Card, { CardHeader, CardTitle, CardContent, CardFooter } from '../../comp
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import QrCode from '../../components/ui/QrCode';
+import ImageUpload from '../../components/ui/ImageUpload';
 import { 
   Plus, 
   Trash2, 
@@ -12,7 +13,8 @@ import {
   Eye,
   Link,
   QrCode as QrIcon,
-  Edit
+  Edit,
+  Image as ImageIcon
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -53,7 +55,10 @@ const AdBuilder = () => {
     name: '',
     background: '#FFFFFF',
     redirectUrl: '',
+    imageFile: null as File | null,
+    imagePreview: '',
   });
+  const [isUploading, setIsUploading] = useState(false);
 
   useEffect(() => {
     fetchDesigns();
@@ -70,6 +75,8 @@ const AdBuilder = () => {
         name: selectedDesign.name || '',
         background: selectedDesign.background || '#FFFFFF',
         redirectUrl: selectedDesign.content.redirectUrl || selectedDesign.ad_spaces?.content?.url || '',
+        imageFile: null,
+        imagePreview: selectedDesign.image_url || '',
       });
     }
   }, [viewMode, selectedDesign]);
@@ -102,6 +109,50 @@ const AdBuilder = () => {
     return `${window.location.origin}/view?ad=${adId}`;
   };
 
+  const handleImageUpload = async (file: File) => {
+    if (!file) return;
+    
+    // Create object URL for preview
+    const previewUrl = URL.createObjectURL(file);
+    setAdForm(prev => ({
+      ...prev,
+      imageFile: file,
+      imagePreview: previewUrl
+    }));
+  };
+
+  const uploadImageToStorage = async (file: File): Promise<string | null> => {
+    if (!file || !user) return null;
+    
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${user.id}-${Date.now()}.${fileExt}`;
+    const filePath = `${fileName}`;
+    
+    try {
+      setIsUploading(true);
+      
+      // Upload image to Supabase Storage
+      const { data, error } = await supabase.storage
+        .from('ad_images')
+        .upload(filePath, file);
+      
+      if (error) throw error;
+      
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('ad_images')
+        .getPublicUrl(filePath);
+      
+      return publicUrl;
+    } catch (error) {
+      console.error('Error uploading image:', error);
+      toast.error('Failed to upload image');
+      return null;
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   const handleSaveAd = async () => {
     if (!adForm.name) {
       toast.error('Please provide a name for your ad');
@@ -117,6 +168,15 @@ const AdBuilder = () => {
     setIsSaving(true);
 
     try {
+      // Upload image if there's a new file
+      let imageUrl = adForm.imagePreview;
+      if (adForm.imageFile) {
+        const uploadedUrl = await uploadImageToStorage(adForm.imageFile);
+        if (uploadedUrl) {
+          imageUrl = uploadedUrl;
+        }
+      }
+
       // Check if we're editing or creating new
       const isEditing = viewMode === 'edit' && selectedDesign;
       
@@ -168,7 +228,8 @@ const AdBuilder = () => {
           : {
               redirectUrl: adForm.redirectUrl
             },
-        ad_space_id: adSpaceId
+        ad_space_id: adSpaceId,
+        image_url: imageUrl
       };
       
       if (isEditing) {
@@ -224,6 +285,8 @@ const AdBuilder = () => {
         name: '',
         background: '#FFFFFF',
         redirectUrl: '',
+        imageFile: null,
+        imagePreview: '',
       });
       setAdMode('custom');
       setSelectedDesign(null);
@@ -258,6 +321,14 @@ const AdBuilder = () => {
   const handleEditAd = (design: AdDesign) => {
     setSelectedDesign(design);
     setViewMode('edit');
+  };
+
+  const clearImage = () => {
+    setAdForm(prev => ({
+      ...prev,
+      imageFile: null,
+      imagePreview: ''
+    }));
   };
 
   const renderAdList = () => (
@@ -559,6 +630,30 @@ const AdBuilder = () => {
                     />
                   </div>
                 </div>
+                
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Upload Image
+                  </label>
+                  <ImageUpload 
+                    onUpload={handleImageUpload}
+                    preview={adForm.imagePreview}
+                    className="border border-gray-300 rounded-md"
+                  />
+                  
+                  {adForm.imagePreview && (
+                    <div className="flex justify-end">
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={clearImage}
+                        className="text-error-500"
+                      >
+                        Clear Image
+                      </Button>
+                    </div>
+                  )}
+                </div>
               </div>
             ) : (
               <Input
@@ -575,7 +670,8 @@ const AdBuilder = () => {
               onClick={handleSaveAd} 
               className="w-full" 
               leftIcon={<Save size={16} />}
-              isLoading={isSaving}
+              isLoading={isSaving || isUploading}
+              disabled={isSaving || isUploading}
             >
               {viewMode === 'edit' ? 'Update Ad Design' : 'Save Ad Design'}
             </Button>
