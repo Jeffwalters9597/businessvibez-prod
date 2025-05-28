@@ -17,4 +17,10 @@ export default defineConfig({
       },
     },
   },
+  server: {
+    headers: {
+      // Disable CSP during development to prevent eval issues
+      'Content-Security-Policy': ''
+    }
+  }
 });

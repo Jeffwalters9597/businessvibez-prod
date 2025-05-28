@@ -1,8 +1,10 @@
-<svg width="500" height="300" viewBox="0 0 500 300" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect width="500" height="300" fill="#F3F4F6"/>
-  <path d="M250 150C264.359 150 276 138.359 276 124C276 109.641 264.359 98 250 98C235.641 98 224 109.641 224 124C224 138.359 235.641 150 250 150Z" fill="#9CA3AF"/>
-  <path d="M250 162C217.5 162 192 181.5 192 206V213H308V206C308 181.5 282.5 162 250 162Z" fill="#9CA3AF"/>
-  <path d="M227 78H273L300 105V222H200V105L227 78Z" stroke="#6B7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M189 235H312" stroke="#6B7280" stroke-width="2" stroke-linecap="round"/>
-  <text x="250" y="260" font-family="sans-serif" font-size="14" text-anchor="middle" fill="#6B7280">Image unavailable</text>
+<svg width="400" height="300" viewBox="0 0 400 300" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="400" height="300" fill="#F3F4F6"/>
+  <path d="M200 150C211.046 150 220 141.046 220 130C220 118.954 211.046 110 200 110C188.954 110 180 118.954 180 130C180 141.046 188.954 150 200 150Z" fill="#9CA3AF"/>
+  <path d="M240 190C240 168.909 222.091 152 200 152C177.909 152 160 168.909 160 190H240Z" fill="#9CA3AF"/>
+  <path d="M150 90H250C255.523 90 260 94.4772 260 100V200C260 205.523 255.523 210 250 210H150C144.477 210 140 205.523 140 200V100C140 94.4772 144.477 90 150 90Z" stroke="#9CA3AF" stroke-width="4" stroke-linecap="round" stroke-dasharray="12 12"/>
+  <path d="M181.172 226.828L191.172 236.828" stroke="#9CA3AF" stroke-width="4" stroke-linecap="round"/>
+  <path d="M208.828 226.828L198.828 236.828" stroke="#9CA3AF" stroke-width="4" stroke-linecap="round"/>
+  <path d="M170 250H230" stroke="#9CA3AF" stroke-width="4" stroke-linecap="round"/>
+  <text x="200" y="275" font-family="system-ui, sans-serif" font-size="14" text-anchor="middle" fill="#6B7280">Image not available</text>
 </svg>
