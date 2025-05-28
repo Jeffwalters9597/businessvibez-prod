@@ -1,7 +1,3 @@
-/**
- * Helper functions to ensure consistent mapping between ad spaces and ad designs
- */
-
 import { supabase } from './lib/supabase';
 
 interface AdSpace {
@@ -63,12 +59,19 @@ export const getAdDesignByAdSpaceId = async (adSpaceId: string): Promise<AdDesig
     const { data: anyData, error: anyError } = await supabase
       .from('ad_designs')
       .select('*')
-      .limit(1);
+      .limit(10);
     
     if (anyError) {
       console.error('Error in Strategy 3:', anyError);
     } else {
       console.log(`Found ${anyData?.length || 0} total ad designs in the table`);
+      if (anyData && anyData.length > 0) {
+        console.log(`Sample ad designs: ${JSON.stringify(anyData.map(d => ({
+          id: d.id,
+          ad_space_id: d.ad_space_id,
+          has_image: !!d.image_url
+        })))}`);
+      }
     }
     
     console.log('No ad design found for ad space ID after all strategies');
@@ -94,6 +97,8 @@ export const debugAdDesignsSchema = async (): Promise<void> => {
       console.error('Error fetching schema info:', columnsError);
     } else if (columnsData && columnsData.length > 0) {
       console.log('Schema columns:', Object.keys(columnsData[0]));
+    } else {
+      console.log('No data found for schema inspection');
     }
     
     // Then get a few sample rows
@@ -153,27 +158,5 @@ export const debugAdSpaceDetails = async (adSpaceId: string): Promise<void> => {
     }
   } catch (error) {
     console.error('Exception in debugAdSpaceDetails:', error);
-  }
-};
-
-/**
- * Additional debugging function that helps diagnose Supabase connection issues
- */
-export const debugSupabaseConnection = async (): Promise<void> => {
-  console.log('Testing Supabase connection...');
-  
-  try {
-    // Check that we can connect at all
-    const { data, error } = await supabase
-      .from('ad_spaces')
-      .select('count(*)', { count: 'exact', head: true });
-    
-    if (error) {
-      console.error('Connection test failed:', error);
-    } else {
-      console.log('Connection test succeeded, count:', data);
-    }
-  } catch (error) {
-    console.error('Supabase connection error:', error);
   }
 };
