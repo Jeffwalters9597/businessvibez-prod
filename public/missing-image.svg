@@ -1,9 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300">
-  <rect width="400" height="300" fill="#f1f5f9" />
-  <g transform="translate(175, 120)">
-    <path d="M24 5C15.7157 5 9 11.7157 9 20C9 28.2843 15.7157 35 24 35C32.2843 35 39 28.2843 39 20C39 11.7157 32.2843 5 24 5ZM7 20C7 10.6112 14.6112 3 24 3C33.3888 3 41 10.6112 41 20C41 29.3888 33.3888 37 24 37C14.6112 37 7 29.3888 7 20Z" fill="#94a3b8"/>
-    <path d="M20.0799 28.5801C19.3268 29.3332 18.1051 29.3332 17.352 28.5801C16.5989 27.827 16.5989 26.6053 17.352 25.8522L29.8522 13.352C30.6053 12.5989 31.8271 12.5989 32.5801 13.352C33.3332 14.1051 33.3332 15.3268 32.5801 16.0799L20.0799 28.5801Z" fill="#94a3b8"/>
-    <path d="M17.352 13.352C18.1051 12.5989 19.3268 12.5989 20.0799 13.352L32.5801 25.8522C33.3332 26.6053 33.3332 27.827 32.5801 28.5801C31.827 29.3332 30.6053 29.3332 29.8522 28.5801L17.352 16.0799C16.5989 15.3268 16.5989 14.1051 17.352 13.352Z" fill="#94a3b8"/>
-  </g>
-  <text x="200" y="200" font-family="Arial, sans-serif" font-size="16" text-anchor="middle" fill="#64748b">Image not available</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="150" viewBox="0 0 200 150">
+  <rect width="200" height="150" fill="#f3f4f6" />
+  <path d="M100,65 L115,90 L85,90 Z" fill="#d1d5db" />
+  <circle cx="130" cy="55" r="10" fill="#d1d5db" />
+  <rect x="30" y="30" width="140" height="90" stroke="#9ca3af" stroke-width="2" stroke-dasharray="5,5" fill="none" />
+  <text x="100" y="125" font-family="Arial" font-size="12" text-anchor="middle" fill="#6b7280">Image not available</text>
 </svg>
