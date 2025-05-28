@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import DebugPanel from '../components/ui/DebugPanel';
 import { getAdDesignByAdSpaceId, debugAdSpaceDetails, debugAdDesignsSchema } from '../AdDesignMapper';
+import { isMobileDevice, preloadImage, safeRedirect, getDeviceInfo } from '../mobile-fixes';
 
 interface AdSpace {
   id: string;
@@ -47,6 +48,7 @@ const View = () => {
   const [debug, setDebug] = useState<string[]>([]);
   const [deviceInfo, setDeviceInfo] = useState<string>('');
   const [isMobile, setIsMobile] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
   const imageRef = useRef<HTMLImageElement>(null);
 
   const addDebug = (message: string) => {
@@ -56,26 +58,10 @@ const View = () => {
 
   useEffect(() => {
     // Collect device info for debugging
-    const ua = navigator.userAgent;
-    const browser = 
-      ua.includes('Chrome') ? 'Chrome' :
-      ua.includes('Firefox') ? 'Firefox' :
-      ua.includes('Safari') && !ua.includes('Chrome') ? 'Safari' :
-      ua.includes('Edge') ? 'Edge' :
-      'Unknown';
+    const deviceData = getDeviceInfo();
+    setIsMobile(deviceData.isMobile);
     
-    const mobileDetected = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
-    setIsMobile(mobileDetected);
-    
-    const os = 
-      ua.includes('Android') ? 'Android' :
-      ua.includes('iPhone') || ua.includes('iPad') || ua.includes('iPod') ? 'iOS' :
-      ua.includes('Windows') ? 'Windows' :
-      ua.includes('Mac') ? 'Mac' :
-      ua.includes('Linux') ? 'Linux' :
-      'Unknown';
-    
-    const deviceInfoStr = `Device: ${mobileDetected ? 'Mobile' : 'Desktop'}, OS: ${os}, Browser: ${browser}`;
+    const deviceInfoStr = `Device: ${deviceData.isMobile ? 'Mobile' : 'Desktop'}, OS: ${deviceData.os}, Browser: ${deviceData.browser}, Viewport: ${deviceData.viewportWidth}x${deviceData.viewportHeight}, PixelRatio: ${deviceData.pixelRatio}`;
     setDeviceInfo(deviceInfoStr);
     addDebug(deviceInfoStr);
   }, []);
@@ -168,35 +154,130 @@ const View = () => {
                 addDebug(`Found redirect URL in ad space: ${finalRedirectUrl}`);
               }
 
-              // Try first to get ad design using ad_space_id
-              try {
-                addDebug(`Fetching ad design for space: ${adSpaceId}`);
-                const adDesignData = await getAdDesignByAdSpaceId(adSpaceId);
+              // Mobile-specific optimizations for ad design fetching
+              if (isMobile) {
+                addDebug("Using mobile-optimized fetching strategy");
                 
-                if (adDesignData) {
-                  addDebug(`Ad design found with image: ${adDesignData.image_url ? 'yes' : 'no'}`);
-                  setAdDesign(adDesignData);
+                // More aggressive approach for mobile: try all strategies in sequence
+                // and retry multiple times if needed
+                try {
+                  // First attempt: direct query for ad_designs with this ad_space_id
+                  const { data: mobileAdDesign, error: mobileError } = await supabase
+                    .from('ad_designs')
+                    .select('*')
+                    .eq('ad_space_id', adSpaceId)
+                    .maybeSingle();
                   
-                  // If this is a redirect ad design, use its redirect URL
-                  if (adDesignData.content?.redirectUrl) {
-                    finalRedirectUrl = adDesignData.content.redirectUrl;
-                    addDebug(`Using redirect URL from ad design: ${finalRedirectUrl}`);
+                  if (mobileError) {
+                    addDebug(`Mobile query error: ${mobileError.message}`);
+                  } else if (mobileAdDesign) {
+                    addDebug(`Mobile direct query successful: ${mobileAdDesign.id}`);
+                    setAdDesign(mobileAdDesign);
+                    
+                    // Pre-fetch image for mobile
+                    if (mobileAdDesign.image_url) {
+                      const preloadSuccess = await preloadImage(mobileAdDesign.image_url);
+                      addDebug(`Mobile image preload ${preloadSuccess ? 'successful' : 'failed'}: ${mobileAdDesign.image_url}`);
+                      
+                      if (!preloadSuccess) {
+                        setImageError(true);
+                      }
+                    }
+                  } else {
+                    // Fallback to standard fetching method with debugging
+                    addDebug("Mobile direct query failed, falling back to standard method");
+                    
+                    // Try to get ad design using the mapper function
+                    const adDesignData = await getAdDesignByAdSpaceId(adSpaceId);
+                    
+                    if (adDesignData) {
+                      addDebug(`Standard method found design: ${adDesignData.id}`);
+                      setAdDesign(adDesignData);
+                      
+                      if (adDesignData.image_url) {
+                        const preloadSuccess = await preloadImage(adDesignData.image_url);
+                        addDebug(`Image preload ${preloadSuccess ? 'successful' : 'failed'}: ${adDesignData.image_url}`);
+                        
+                        if (!preloadSuccess) {
+                          setImageError(true);
+                        }
+                      }
+                    } else {
+                      addDebug("No ad design found for this ad space through any method");
+                      await debugAdSpaceDetails(adSpaceId);
+                    }
                   }
-
-                  // Preload the image if available (especially important for mobile)
-                  if (adDesignData.image_url) {
-                    addDebug(`Pre-fetching image: ${adDesignData.image_url}`);
-                    const imgCache = new Image();
-                    imgCache.src = adDesignData.image_url;
-                  }
-                } else {
-                  addDebug("No ad design found for this ad space through any method");
+                } catch (mobileQueryError) {
+                  addDebug(`Mobile query exception: ${mobileQueryError}`);
                   
-                  // Extra debugging for this specific issue
-                  await debugAdSpaceDetails(adSpaceId);
+                  // Last resort for mobile: try to get any design by this user
+                  try {
+                    const { data: adSpaceUser } = await supabase
+                      .from('ad_spaces')
+                      .select('user_id')
+                      .eq('id', adSpaceId)
+                      .single();
+                    
+                    if (adSpaceUser?.user_id) {
+                      const { data: userDesigns } = await supabase
+                        .from('ad_designs')
+                        .select('*')
+                        .eq('user_id', adSpaceUser.user_id)
+                        .order('created_at', { ascending: false })
+                        .limit(1);
+                      
+                      if (userDesigns && userDesigns.length > 0) {
+                        addDebug(`Mobile last resort found design: ${userDesigns[0].id}`);
+                        setAdDesign(userDesigns[0]);
+                        
+                        // Try to update the relationship for future requests
+                        try {
+                          await supabase
+                            .from('ad_designs')
+                            .update({ ad_space_id: adSpaceId })
+                            .eq('id', userDesigns[0].id);
+                          
+                          addDebug("Updated ad_space_id for future requests");
+                        } catch (updateError) {
+                          addDebug(`Failed to update relationship: ${updateError}`);
+                        }
+                      }
+                    }
+                  } catch (lastResortError) {
+                    addDebug(`Mobile last resort failed: ${lastResortError}`);
+                  }
                 }
-              } catch (designQueryError: any) {
-                addDebug(`Error fetching design: ${designQueryError.message}`);
+              } else {
+                // Desktop approach - use the standard method
+                try {
+                  addDebug(`Fetching ad design for space: ${adSpaceId}`);
+                  const adDesignData = await getAdDesignByAdSpaceId(adSpaceId);
+                  
+                  if (adDesignData) {
+                    addDebug(`Ad design found with image: ${adDesignData.image_url ? 'yes' : 'no'}`);
+                    setAdDesign(adDesignData);
+                    
+                    // If this is a redirect ad design, use its redirect URL
+                    if (adDesignData.content?.redirectUrl) {
+                      finalRedirectUrl = adDesignData.content.redirectUrl;
+                      addDebug(`Using redirect URL from ad design: ${finalRedirectUrl}`);
+                    }
+
+                    // Preload the image if available
+                    if (adDesignData.image_url) {
+                      addDebug(`Pre-fetching image: ${adDesignData.image_url}`);
+                      const imgCache = new Image();
+                      imgCache.src = adDesignData.image_url;
+                    }
+                  } else {
+                    addDebug("No ad design found for this ad space through any method");
+                    
+                    // Extra debugging for this specific issue
+                    await debugAdSpaceDetails(adSpaceId);
+                  }
+                } catch (designQueryError: any) {
+                  addDebug(`Error fetching design: ${designQueryError.message}`);
+                }
               }
             }
 
@@ -254,7 +335,7 @@ const View = () => {
     };
 
     fetchData();
-  }, [searchParams]);
+  }, [searchParams, isMobile, retryCount]);
 
   // Handle redirect countdown
   useEffect(() => {
@@ -272,30 +353,33 @@ const View = () => {
     }
   }, [redirectUrl, redirectCountdown, redirectClicked]);
 
+  // Special mobile retry logic - if no data is found, retry a few times
+  useEffect(() => {
+    if (!isLoading && isMobile && !adDesign && adData && retryCount < 3) {
+      addDebug(`Mobile retry attempt ${retryCount + 1}`);
+      
+      const retryTimer = setTimeout(() => {
+        setRetryCount(retryCount + 1);
+      }, 1000); // Wait 1 second between retries
+      
+      return () => clearTimeout(retryTimer);
+    }
+  }, [isLoading, isMobile, adDesign, adData, retryCount]);
+
   // Pre-load image with better error handling specifically for mobile
   useEffect(() => {
     if (adDesign?.image_url) {
       addDebug(`Preloading image: ${adDesign.image_url}`);
       
-      // For mobile, we'll use a different approach to load images
+      // For mobile, we'll use our special mobile preloader
       if (isMobile) {
-        // Create object URL to prevent CORS issues
-        const fetchImage = async () => {
-          try {
-            const response = await fetch(adDesign.image_url!, { mode: 'cors' });
-            if (!response.ok) {
-              throw new Error(`Failed to load image: ${response.status}`);
-            }
-            
-            addDebug("Image fetch successful");
-            setImageLoaded(true);
-          } catch (err) {
-            addDebug(`Mobile image fetch error: ${err}`);
-            setImageError(true);
-          }
+        const loadMobileImage = async () => {
+          const success = await preloadImage(adDesign.image_url!);
+          setImageLoaded(success);
+          setImageError(!success);
         };
         
-        fetchImage();
+        loadMobileImage();
       } else {
         // Desktop approach
         const img = new Image();
@@ -320,9 +404,14 @@ const View = () => {
     
     try {
       addDebug(`Redirecting to: ${redirectUrl}`);
-      // For mobile compatibility, try simple location change first
-      window.location.href = redirectUrl;
+      // Use our safe redirect function
+      const success = safeRedirect(redirectUrl);
       setRedirectClicked(true);
+      
+      if (!success) {
+        addDebug("Safe redirect failed, showing manual option");
+        setError('Unable to navigate automatically. Please click the link below to continue.');
+      }
     } catch (err: any) {
       addDebug(`Navigation error: ${err.message}`);
       // If automatic navigation fails, show an error and encourage manual clicking
@@ -340,6 +429,20 @@ const View = () => {
   const handleImageLoad = () => {
     addDebug("Image load triggered by img onLoad event");
     setImageLoaded(true);
+  };
+
+  // Try a different approach to load images on mobile
+  const forceReloadImage = () => {
+    if (!adDesign?.image_url || !imageRef.current) return;
+    
+    try {
+      // Add a cache-busting parameter
+      const cacheBuster = `?t=${Date.now()}`;
+      imageRef.current.src = adDesign.image_url + cacheBuster;
+      addDebug("Forcing image reload with cache-busting");
+    } catch (err) {
+      addDebug(`Force reload failed: ${err}`);
+    }
   };
 
   // Show debug info in development or when ?debug=true is in URL
@@ -396,17 +499,33 @@ const View = () => {
         }}
       >
         {!imageLoaded && !imageError && (
-          <div className="w-16 h-16 border-4 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+          <div className="flex flex-col items-center justify-center">
+            <div className="w-16 h-16 border-4 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+            <p className="mt-4 text-gray-600">Loading image...</p>
+            {isMobile && retryCount > 0 && (
+              <p className="text-xs text-gray-500">Retry attempt {retryCount}/3</p>
+            )}
+          </div>
         )}
         
         <div className="w-full h-full flex items-center justify-center">
           {imageError ? (
             // Fallback image when the main one fails to load
-            <img 
-              src="/missing-image.svg"
-              alt={adData?.title || "Advertisement"}
-              className="w-full h-auto max-h-screen object-contain"
-            />
+            <div className="flex flex-col items-center justify-center">
+              <img 
+                src="/missing-image.svg"
+                alt={adData?.title || "Advertisement"}
+                className="w-full h-auto max-h-screen object-contain"
+              />
+              {isMobile && (
+                <button 
+                  onClick={forceReloadImage}
+                  className="mt-4 px-4 py-2 bg-primary-500 text-white rounded-md"
+                >
+                  Try Again
+                </button>
+              )}
+            </div>
           ) : (
             <img 
               ref={imageRef}
@@ -482,6 +601,11 @@ const View = () => {
             {imageError && adDesign?.image_url && (
               <p className="mt-4 text-sm text-gray-600">
                 There was an error loading the image for this ad.
+              </p>
+            )}
+            {isMobile && retryCount > 0 && (
+              <p className="text-xs text-gray-500 mt-2">
+                Retry attempt {retryCount}/3
               </p>
             )}
           </div>
