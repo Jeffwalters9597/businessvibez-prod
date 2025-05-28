@@ -17,10 +17,13 @@ if (!supabaseAnonKey) {
 // Log Supabase initialization for debugging
 console.log(`Initializing Supabase with URL: ${supabaseUrl.substring(0, 15)}...`);
 
+// Declare the Supabase client
+export let supabase;
+
 // Initialize Supabase client with more verbose error handling
 try {
   // Initialize Supabase client
-  export const supabase = createClient(
+  supabase = createClient(
     supabaseUrl,
     supabaseAnonKey,
     {
