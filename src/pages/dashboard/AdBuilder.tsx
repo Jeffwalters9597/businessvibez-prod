@@ -188,7 +188,7 @@ const AdBuilder = () => {
     }
 
     setIsSaving(true);
-    addDebug(`Saving ad design: ${adForm.name}, mode: ${adMode}`);
+    addDebug(`Starting save process for ad: ${adForm.name}, mode: ${adMode}`);
 
     try {
       // Upload image if there's a new file
@@ -208,12 +208,13 @@ const AdBuilder = () => {
       // Check if we're editing or creating new
       const isEditing = viewMode === 'edit' && selectedDesign;
       
-      // First create or update the ad space
-      addDebug(`${isEditing ? 'Updating' : 'Creating'} ad space`);
+      // STEP 1: Create or update the ad space
+      addDebug(`STEP 1: ${isEditing ? 'Updating' : 'Creating'} ad space`);
+      
       const adSpaceData = {
         user_id: user?.id,
         title: adForm.name,
-        description: adMode === 'custom' ? `Ad space for ${adForm.name}` : `Ad space for ${adForm.name}`,
+        description: `Ad space for ${adForm.name}`,
         content: adMode === 'custom' 
           ? {}
           : {
@@ -253,13 +254,20 @@ const AdBuilder = () => {
           addDebug(`Ad space creation error: ${adSpaceError.message}`);
           throw adSpaceError;
         }
+        
+        if (!adSpace || !adSpace.id) {
+          addDebug('Ad space creation failed: No ID returned');
+          throw new Error('Failed to create ad space - no ID returned');
+        }
+        
         adSpaceId = adSpace.id;
         addDebug(`New ad space created with ID: ${adSpaceId}`);
       }
 
-      // Then create or update the ad design
-      // CRITICAL: Always include image_url and ad_space_id in the record
-      addDebug(`${isEditing ? 'Updating' : 'Creating'} ad design with ad_space_id: ${adSpaceId}`);
+      // STEP 2: Create or update the ad design
+      addDebug(`STEP 2: ${isEditing ? 'Updating' : 'Creating'} ad design with ad_space_id: ${adSpaceId}`);
+      
+      // CRITICAL: Explicitly include image_url and ad_space_id in the record
       const adDesignData = {
         user_id: user?.id,
         name: adForm.name,
@@ -273,9 +281,15 @@ const AdBuilder = () => {
         image_url: imageUrl
       };
       
-      if (isEditing) {
+      addDebug(`Ad design data being saved: ${JSON.stringify({
+        ...adDesignData,
+        user_id: 'REDACTED' // Don't log the actual user ID
+      })}`);
+      
+      if (isEditing && selectedDesign?.id) {
         // Update existing design
         addDebug(`Updating existing ad design ID: ${selectedDesign.id}`);
+        
         const { data: adDesign, error: adError } = await supabase
           .from('ad_designs')
           .update(adDesignData)
@@ -292,21 +306,34 @@ const AdBuilder = () => {
           
         if (adError) {
           addDebug(`Ad design update error: ${adError.message}`);
+          console.error('AD_BUILDER_SUPABASE_ERROR [ad_designs update]:', JSON.stringify(adError, null, 2));
           throw adError;
         }
         
-        // Update the design in the local state
-        setSavedDesigns(prev => 
-          prev.map(design => 
-            design.id === adDesign.id ? adDesign : design
-          )
-        );
+        if (!adDesign) {
+          addDebug('Ad design update returned no data');
+          console.warn('AD_BUILDER_SUPABASE_WARN [ad_designs update]: No data returned from update');
+        } else {
+          addDebug(`Ad design updated successfully with ID: ${adDesign.id}`);
+          addDebug(`Updated ad design has image_url: ${adDesign.image_url ? 'yes' : 'no'}`);
+          addDebug(`Updated ad design has ad_space_id: ${adDesign.ad_space_id ? adDesign.ad_space_id : 'no'}`);
+          
+          console.log('AD_BUILDER_SUPABASE_SUCCESS [ad_designs update]: Updated ad_design data:', JSON.stringify(adDesign, null, 2));
+          console.log('AD_BUILDER_VERIFY_LINK: ad_design.id =', adDesign.id, '; ad_design.ad_space_id =', adDesign.ad_space_id, '; ad_design.image_url =', adDesign.image_url);
+          
+          // Update the design in the local state
+          setSavedDesigns(prev => 
+            prev.map(design => 
+              design.id === adDesign.id ? adDesign : design
+            )
+          );
+        }
         
-        addDebug('Ad design updated successfully');
         toast.success('Ad design updated!');
       } else {
         // Create new design
         addDebug('Creating new ad design');
+        
         const { data: adDesign, error: adError } = await supabase
           .from('ad_designs')
           .insert([adDesignData])
@@ -326,19 +353,26 @@ const AdBuilder = () => {
           throw adError;
         }
         
-        addDebug(`New ad design created with ID: ${adDesign.id}`);
-        addDebug(`Ad design has image_url: ${adDesign.image_url ? 'yes' : 'no'}`);
-        addDebug(`Ad design has ad_space_id: ${adDesign.ad_space_id ? 'yes' : 'no'}`);
+        if (!adDesign) {
+          addDebug('Ad design creation returned no data');
+          console.warn('AD_BUILDER_SUPABASE_WARN [ad_designs insert]: No data returned from insert');
+        } else {
+          addDebug(`New ad design created with ID: ${adDesign.id}`);
+          addDebug(`New ad design has image_url: ${adDesign.image_url ? 'yes' : 'no'}`);
+          addDebug(`New ad design has ad_space_id: ${adDesign.ad_space_id ? adDesign.ad_space_id : 'no'}`);
+          
+          // Log the successful save with detailed information
+          console.log('AD_BUILDER_SUPABASE_SUCCESS [ad_designs insert]: Saved ad_design data:', JSON.stringify(adDesign, null, 2));
+          console.log('AD_BUILDER_VERIFY_LINK: ad_design.id =', adDesign.id, '; ad_design.ad_space_id =', adDesign.ad_space_id, '; ad_design.image_url =', adDesign.image_url);
+          
+          setSavedDesigns(prev => [adDesign, ...prev]);
+        }
         
-        // Log the successful save with detailed information
-        console.log('AD_BUILDER_SUPABASE_SUCCESS [ad_designs insert]: Saved ad_design data:', JSON.stringify(adDesign, null, 2));
-        console.log('AD_BUILDER_VERIFY_LINK: ad_design.id =', adDesign.id, '; ad_design.ad_space_id =', adDesign.ad_space_id, '; ad_design.image_url =', adDesign.image_url);
-        
-        setSavedDesigns(prev => [adDesign, ...prev]);
         toast.success('Ad design created!');
       }
       
-      // Verify data was saved correctly
+      // STEP 3: Verify data was saved correctly
+      addDebug('STEP 3: Verifying data was saved correctly');
       await verifyAdDesignSaved(adSpaceId);
       
       setViewMode('list');
@@ -348,7 +382,6 @@ const AdBuilder = () => {
     } catch (error: any) {
       console.error('Save error:', error);
       addDebug(`Save error: ${error.message}`);
-      console.error('AD_BUILDER_SUPABASE_ERROR [ad_designs insert]:', JSON.stringify(error, null, 2));
       toast.error(error.message || 'Failed to save design');
     } finally {
       setIsSaving(false);
@@ -358,6 +391,8 @@ const AdBuilder = () => {
   const verifyAdDesignSaved = async (adSpaceId: string) => {
     try {
       addDebug(`Verifying ad design was saved with ad_space_id: ${adSpaceId}`);
+      
+      // First try: Direct query with ad_space_id
       const { data, error } = await supabase
         .from('ad_designs')
         .select('id, image_url, ad_space_id')
@@ -369,24 +404,45 @@ const AdBuilder = () => {
       } else if (data) {
         addDebug(`Verification successful: Found ad design ID ${data.id}`);
         addDebug(`Verification details: image_url=${data.image_url ? 'present' : 'missing'}, ad_space_id=${data.ad_space_id}`);
+        return;
       } else {
         addDebug('Verification failed: No ad design found with this ad_space_id');
-        
-        // Try querying all ad designs to see if they exist
-        const { data: allDesigns, error: allError } = await supabase
-          .from('ad_designs')
-          .select('id, ad_space_id')
-          .limit(10);
-        
-        if (allError) {
-          addDebug(`Error querying all designs: ${allError.message}`);
-        } else {
-          addDebug(`Found ${allDesigns?.length || 0} total ad designs`);
-          if (allDesigns && allDesigns.length > 0) {
-            addDebug(`Sample ad_design IDs: ${allDesigns.map(d => d.id).join(', ')}`);
-            addDebug(`Sample ad_space_ids: ${allDesigns.map(d => d.ad_space_id).join(', ')}`);
+      }
+      
+      // Second try: Get all ad designs for this user
+      const { data: userDesigns, error: userError } = await supabase
+        .from('ad_designs')
+        .select('id, ad_space_id, image_url')
+        .eq('user_id', user?.id)
+        .order('created_at', { ascending: false })
+        .limit(10);
+      
+      if (userError) {
+        addDebug(`Error querying user designs: ${userError.message}`);
+      } else {
+        addDebug(`Found ${userDesigns?.length || 0} ad designs for this user`);
+        if (userDesigns && userDesigns.length > 0) {
+          const relatedDesigns = userDesigns.filter(d => d.ad_space_id === adSpaceId);
+          addDebug(`Found ${relatedDesigns.length} designs linked to this ad space`);
+          
+          if (relatedDesigns.length > 0) {
+            addDebug(`Linked design details: ${JSON.stringify(relatedDesigns[0])}`);
+          } else {
+            addDebug(`Most recent design created: ${JSON.stringify(userDesigns[0])}`);
           }
         }
+      }
+      
+      // Third try: Query the database schema to check column names
+      const { data: schemaData, error: schemaError } = await supabase
+        .from('ad_designs')
+        .select()
+        .limit(1);
+      
+      if (schemaError) {
+        addDebug(`Schema query error: ${schemaError.message}`);
+      } else if (schemaData && schemaData.length > 0) {
+        addDebug(`Database schema columns: ${Object.keys(schemaData[0]).join(', ')}`);
       }
     } catch (err: any) {
       addDebug(`Verification exception: ${err.message}`);
@@ -690,6 +746,10 @@ const AdBuilder = () => {
                   <h3 className="text-sm font-medium text-gray-500">Ad Space ID</h3>
                   <p className="text-xs font-mono break-all">{selectedDesign.ad_spaces.id}</p>
                 </div>
+                <div>
+                  <h3 className="text-sm font-medium text-gray-500">Ad Design ID</h3>
+                  <p className="text-xs font-mono break-all">{selectedDesign.id}</p>
+                </div>
                 {selectedDesign.image_url && (
                   <div>
                     <h3 className="text-sm font-medium text-gray-500">Image URL</h3>
@@ -710,7 +770,7 @@ const AdBuilder = () => {
         <Button variant="outline" onClick={() => setViewMode('list')}>
           Back to List
         </Button>
-        <h1 className="text-2xl font-bold">Create New Ad</h1>
+        <h1 className="text-2xl font-bold">{viewMode === 'edit' ? 'Edit Ad' : 'Create New Ad'}</h1>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-1 gap-6">

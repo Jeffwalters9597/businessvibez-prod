@@ -26,18 +26,19 @@ export const getAdDesignByAdSpaceId = async (adSpaceId: string): Promise<AdDesig
       .from('ad_designs')
       .select('*')
       .eq('ad_space_id', adSpaceId)
+      .order('created_at', { ascending: false })  // Get the most recent one
       .maybeSingle();
     
     if (relationError) {
       console.error('Error in Strategy 1:', relationError);
     } else if (relationData) {
-      console.log('Found ad design by ad_space_id relation');
+      console.log('Found ad design by ad_space_id relation:', relationData.id);
       return relationData;
     } else {
       console.log('No results from Strategy 1');
     }
     
-    // Strategy 2: Try to find by direct ID match
+    // Strategy 2: Try to find by direct ID match (fallback)
     console.log("Strategy 2: Trying direct ID match");
     const { data: directData, error: directError } = await supabase
       .from('ad_designs')
@@ -48,25 +49,53 @@ export const getAdDesignByAdSpaceId = async (adSpaceId: string): Promise<AdDesig
     if (directError) {
       console.error('Error in Strategy 2:', directError);
     } else if (directData) {
-      console.log('Found ad design by direct ID match');
+      console.log('Found ad design by direct ID match:', directData.id);
       return directData;
     } else {
       console.log('No results from Strategy 2');
     }
     
-    // Strategy 3: Try broader query to see if any ad designs exist at all
-    console.log("Strategy 3: Checking for any ad designs linked to this space");
+    // Strategy 3: Get ad space details first, then look for designs with matching user_id
+    console.log("Strategy 3: Trying user-based match");
+    const { data: adSpaceData, error: adSpaceError } = await supabase
+      .from('ad_spaces')
+      .select('user_id')
+      .eq('id', adSpaceId)
+      .maybeSingle();
+      
+    if (adSpaceError) {
+      console.error('Error fetching ad space in Strategy 3:', adSpaceError);
+    } else if (adSpaceData?.user_id) {
+      // Now find the most recent ad design by this user
+      const { data: userDesigns, error: userError } = await supabase
+        .from('ad_designs')
+        .select('*')
+        .eq('user_id', adSpaceData.user_id)
+        .order('created_at', { ascending: false })
+        .limit(1);
+        
+      if (userError) {
+        console.error('Error in Strategy 3 user query:', userError);
+      } else if (userDesigns && userDesigns.length > 0) {
+        console.log('Found ad design by user match:', userDesigns[0].id);
+        return userDesigns[0];
+      }
+    }
+    
+    // Strategy 4: Try broader query to see if any ad designs exist at all
+    console.log("Strategy 4: Checking for any ad designs");
     const { data: anyData, error: anyError } = await supabase
       .from('ad_designs')
       .select('*')
+      .order('created_at', { ascending: false })
       .limit(10);
     
     if (anyError) {
-      console.error('Error in Strategy 3:', anyError);
+      console.error('Error in Strategy 4:', anyError);
     } else {
       console.log(`Found ${anyData?.length || 0} total ad designs in the table`);
       if (anyData && anyData.length > 0) {
-        console.log(`Sample ad designs: ${JSON.stringify(anyData.map(d => ({
+        console.log(`Sample ad designs: ${JSON.stringify(anyData.slice(0, 3).map(d => ({
           id: d.id,
           ad_space_id: d.ad_space_id,
           has_image: !!d.image_url
@@ -99,12 +128,23 @@ export const debugAdDesignsSchema = async (): Promise<void> => {
       console.log('Schema columns:', Object.keys(columnsData[0]));
     } else {
       console.log('No data found for schema inspection');
+      
+      // Try a raw query to check if the table exists
+      const { data: tableCheck, error: tableError } = await supabase
+        .rpc('check_table_exists', { table_name: 'ad_designs' });
+        
+      if (tableError) {
+        console.error('Error checking table existence:', tableError);
+      } else {
+        console.log('Table existence check:', tableCheck);
+      }
     }
     
     // Then get a few sample rows
     const { data, error } = await supabase
       .from('ad_designs')
-      .select('id, ad_space_id, image_url')
+      .select('id, ad_space_id, image_url, user_id, created_at')
+      .order('created_at', { ascending: false })
       .limit(5);
     
     if (error) {
@@ -134,23 +174,45 @@ export const debugAdSpaceDetails = async (adSpaceId: string): Promise<void> => {
     if (adSpaceError) {
       console.error('Error fetching ad space:', adSpaceError);
     } else if (adSpace) {
-      console.log('Ad space details:', adSpace);
-      
-      // Check which columns exist
-      console.log('Ad space columns:', Object.keys(adSpace));
+      console.log('Ad space details:', JSON.stringify({
+        id: adSpace.id,
+        title: adSpace.title,
+        user_id: adSpace.user_id,
+        has_content: !!adSpace.content
+      }));
       
       // Try to find any ad designs that might be linked
       const { data: linkData, error: linkError } = await supabase
         .from('ad_designs')
-        .select('*')
-        .eq('ad_space_id', adSpaceId);
+        .select('id, ad_space_id, image_url, created_at')
+        .eq('ad_space_id', adSpaceId)
+        .order('created_at', { ascending: false });
       
       if (linkError) {
         console.error('Error checking linked designs:', linkError);
       } else {
         console.log(`Found ${linkData?.length || 0} linked designs`);
         if (linkData && linkData.length > 0) {
-          console.log('First linked design:', linkData[0]);
+          console.log('Linked designs:', JSON.stringify(linkData));
+        }
+      }
+      
+      // Try to find by user_id
+      if (adSpace.user_id) {
+        const { data: userDesigns, error: userError } = await supabase
+          .from('ad_designs')
+          .select('id, ad_space_id, image_url, created_at')
+          .eq('user_id', adSpace.user_id)
+          .order('created_at', { ascending: false })
+          .limit(5);
+          
+        if (userError) {
+          console.error('Error checking user designs:', userError);
+        } else {
+          console.log(`Found ${userDesigns?.length || 0} designs by same user`);
+          if (userDesigns && userDesigns.length > 0) {
+            console.log('User designs:', JSON.stringify(userDesigns));
+          }
         }
       }
     } else {
