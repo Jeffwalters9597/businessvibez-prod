@@ -348,7 +348,7 @@ const AdBuilder = () => {
                   <div className="relative z-10 flex items-center justify-center h-full">
                     {design.content.headline ? (
                       <div className="text-center">
-                        <h3 className="text-lg font-bold mb-2 text-white" style={{ textShadow: '0 2px 4px rgba(0,0,0,0.5)' }}>
+                        <h3 className="text-lg font-bold mb-2 text-white\" style={{ textShadow: '0 2px 4px rgba(0,0,0,0.5)' }}>
                           {design.content.headline}
                         </h3>
                         <p className="text-sm text-white" style={{ textShadow: '0 2px 4px rgba(0,0,0,0.5)' }}>
