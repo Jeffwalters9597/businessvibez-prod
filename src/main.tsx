@@ -15,7 +15,6 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 // Enhanced checks for environments that don't support Service Workers
 const isWebContainerEnvironment = () => {
   return window.location.hostname.includes('stackblitz') ||
-         window.location.hostname.includes('localhost') ||
          window.location.href.includes('stackblitz.io') ||
          window.self !== window.top; // Detects if running in an iframe
 };

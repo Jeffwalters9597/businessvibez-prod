@@ -155,20 +155,6 @@ export const debugAdDesignsSchema = async (): Promise<void> => {
       console.log('Schema columns:', Object.keys(columnsData[0]));
     } else {
       console.log('No data found for schema inspection');
-      
-      // Try a raw query to check if the table exists
-      try {
-        const { data: tableCheck, error: tableError } = await supabase
-          .rpc('check_table_exists', { table_name: 'ad_designs' });
-          
-        if (tableError) {
-          console.error('Error checking table existence:', tableError);
-        } else {
-          console.log('Table existence check:', tableCheck);
-        }
-      } catch (rpcError) {
-        console.error('RPC error (expected if function not defined):', rpcError);
-      }
     }
     
     // Then get a few sample rows
