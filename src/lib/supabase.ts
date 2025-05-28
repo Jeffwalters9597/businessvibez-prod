@@ -42,3 +42,5 @@ try {
 }
 
 // The duplicate export has been removed
+
+export { supabase }
