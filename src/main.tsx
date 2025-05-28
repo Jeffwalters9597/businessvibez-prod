@@ -14,9 +14,26 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 
 // Enhanced checks for environments that don't support Service Workers
 const isWebContainerEnvironment = () => {
-  return window.location.hostname.includes('stackblitz') ||
-         window.location.href.includes('stackblitz.io') ||
-         window.self !== window.top; // Detects if running in an iframe
+  // Basic checks
+  if (window.location.hostname.includes('stackblitz') ||
+      window.location.href.includes('stackblitz.io') ||
+      window.self !== window.top) {
+    return true;
+  }
+  
+  // Additional check for StackBlitz in iframes
+  try {
+    if (window.parent && window.parent.location.hostname.includes('stackblitz')) {
+      return true;
+    }
+  } catch (e) {
+    // If we get a SecurityError, we're likely in a sandboxed iframe (like StackBlitz)
+    if (e instanceof DOMException && e.name === 'SecurityError') {
+      return true;
+    }
+  }
+  
+  return false;
 };
 
 // Only register service worker if the browser supports it and we're not in a WebContainer environment
