@@ -26,11 +26,23 @@ const isWebContainerEnvironment = () => {
     if (window.parent && window.parent.location.hostname.includes('stackblitz')) {
       return true;
     }
+    
+    // Check for StackBlitz preview iframe
+    if (window.self.frameElement && window.self.frameElement.id === 'app-iframe') {
+      return true;
+    }
   } catch (e) {
     // If we get a SecurityError, we're likely in a sandboxed iframe (like StackBlitz)
     if (e instanceof DOMException && e.name === 'SecurityError') {
       return true;
     }
+  }
+  
+  // Additional safety check: look for global WebContainer variables or objects
+  if (typeof window.WebContainer !== 'undefined' || 
+      typeof window.__WEBCONTAINER_API !== 'undefined' ||
+      window.location.href.includes('webcontainer')) {
+    return true;
   }
   
   return false;
