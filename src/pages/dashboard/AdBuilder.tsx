@@ -53,8 +53,6 @@ const AdBuilder = () => {
   const [adMode, setAdMode] = useState<'custom' | 'redirect'>('custom');
   const [adForm, setAdForm] = useState({
     name: '',
-    headline: '',
-    subheadline: '',
     background: '#FFFFFF',
     redirectUrl: '',
     businessType: ''
@@ -73,8 +71,6 @@ const AdBuilder = () => {
       setAdMode(isRedirectMode ? 'redirect' : 'custom');
       setAdForm({
         name: selectedDesign.name || '',
-        headline: selectedDesign.content.headline || '',
-        subheadline: selectedDesign.content.subheadline || '',
         background: selectedDesign.background || '#FFFFFF',
         redirectUrl: selectedDesign.content.redirectUrl || selectedDesign.ad_spaces?.content?.url || '',
         businessType: ''
@@ -121,13 +117,6 @@ const AdBuilder = () => {
     try {
       // Simulate AI generation
       await new Promise(resolve => setTimeout(resolve, 1500));
-
-      setAdForm(prev => ({
-        ...prev,
-        headline: `${adForm.businessType} - Special Offer!`,
-        subheadline: `Visit our ${adForm.businessType} today and enjoy exclusive deals on our premium products!`
-      }));
-
       toast.success('AI content generated!');
     } catch (error) {
       toast.error('Failed to generate content');
@@ -158,12 +147,9 @@ const AdBuilder = () => {
       const adSpaceData = {
         user_id: user?.id,
         title: adForm.name,
-        description: adMode === 'custom' ? adForm.subheadline : `Ad space for ${adForm.name}`,
+        description: adMode === 'custom' ? `Ad space for ${adForm.name}` : `Ad space for ${adForm.name}`,
         content: adMode === 'custom' 
-          ? {
-              headline: adForm.headline,
-              subheadline: adForm.subheadline
-            }
+          ? {}
           : {
               url: adForm.redirectUrl
             },
@@ -201,10 +187,7 @@ const AdBuilder = () => {
         name: adForm.name,
         background: adForm.background,
         content: adMode === 'custom'
-          ? {
-              headline: adForm.headline,
-              subheadline: adForm.subheadline
-            }
+          ? {}
           : {
               redirectUrl: adForm.redirectUrl
             },
@@ -262,8 +245,6 @@ const AdBuilder = () => {
       // Reset form
       setAdForm({
         name: '',
-        headline: '',
-        subheadline: '',
         background: '#FFFFFF',
         redirectUrl: '',
         businessType: ''
@@ -618,25 +599,6 @@ const AdBuilder = () => {
                   >
                     Generate Content
                   </Button>
-                </div>
-                
-                <Input
-                  label="Headline"
-                  value={adForm.headline}
-                  onChange={(e) => setAdForm({ ...adForm, headline: e.target.value })}
-                  placeholder="Enter a catchy headline"
-                />
-                
-                <div className="space-y-2">
-                  <label className="block text-sm font-medium text-gray-700">
-                    Subheadline
-                  </label>
-                  <textarea
-                    value={adForm.subheadline}
-                    onChange={(e) => setAdForm({ ...adForm, subheadline: e.target.value })}
-                    placeholder="Enter a descriptive subheadline"
-                    className="w-full min-h-[100px] rounded-md border border-gray-300 p-2 text-sm"
-                  />
                 </div>
                 
                 <div className="space-y-2">
