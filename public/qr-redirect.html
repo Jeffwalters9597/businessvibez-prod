@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Redirecting...</title>
+  <script>
+    async function redirect() {
+      try {
+        const qrId = new URLSearchParams(window.location.search).get('qr');
+        const adId = new URLSearchParams(window.location.search).get('ad');
+
+        if (!qrId && !adId) {
+          throw new Error('QR code ID or Ad Space ID is required');
+        }
+
+        // Get Supabase URL and key from meta tags
+        const supabaseUrl = document.querySelector('meta[name="supabase-url"]').content;
+        const supabaseKey = document.querySelector('meta[name="supabase-key"]').content;
+
+        if (!supabaseUrl || !supabaseKey) {
+          throw new Error('Missing Supabase configuration');
+        }
+
+        // Initialize Supabase client
+        const { createClient } = supabase;
+        const client = createClient(supabaseUrl, supabaseKey, {
+          auth: {
+            persistSession: false
+          }
+        });
+
+        let redirectUrl = '/';
+        let adSpaceId = adId;
+
+        if (qrId) {
+          // Get QR code data
+          const { data: qrCode, error: qrError } = await client
+            .from('qr_codes')
+            .select('url, ad_space_id')
+            .eq('id', qrId)
+            .single();
+
+          if (qrError) {
+            if (qrError.code === 'PGRST116') {
+              throw new Error('QR code not found');
+            }
+            throw qrError;
+          }
+
+          if (qrCode) {
+            redirectUrl = qrCode.url;
+            // Use the QR code's ad space if none was provided
+            if (!adSpaceId && qrCode.ad_space_id) {
+              adSpaceId = qrCode.ad_space_id;
+            }
+          }
+
+          // Record scan
+          await client.rpc('increment_qr_code_scans', {
+            qr_id: qrId,
+            ad_id: adSpaceId,
+            ip: 'anonymous',
+            agent: navigator.userAgent,
+            loc: {}
+          });
+        }
+
+        if (adSpaceId) {
+          // Get ad space data
+          const { data: adSpace, error: adError } = await client
+            .from('ad_spaces')
+            .select('content')
+            .eq('id', adSpaceId)
+            .single();
+
+          if (adError) {
+            if (adError.code === 'PGRST116') {
+              throw new Error('Ad space not found');
+            }
+            throw adError;
+          }
+
+          if (adSpace?.content?.url) {
+            redirectUrl = adSpace.content.url;
+          }
+
+          // Increment views
+          await client.rpc('increment_ad_space_views', {
+            space_id: adSpaceId
+          });
+        }
+
+        // Redirect to destination
+        window.location.href = redirectUrl;
+      } catch (error) {
+        console.error('Redirect error:', error);
+        const errorElement = document.getElementById('error');
+        errorElement.style.display = 'block';
+        errorElement.textContent = error.message || 'Failed to process redirect';
+      }
+    }
+  </script>
+  <meta name="supabase-url" content="%VITE_SUPABASE_URL%">
+  <meta name="supabase-key" content="%VITE_SUPABASE_ANON_KEY%">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+      padding: 1rem;
+      background: #f9fafb;
+    }
+    .container {
+      width: 100%;
+      max-width: 400px;
+      text-align: center;
+      padding: 2rem;
+      background: white;
+      border-radius: 0.5rem;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+    .loader {
+      width: 40px;
+      height: 40px;
+      border: 3px solid #e5e7eb;
+      border-top-color: #0066FF;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 1rem;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    #error {
+      display: none;
+      color: #dc2626;
+      margin-top: 1rem;
+      padding: 1rem;
+      background: #fee2e2;
+      border-radius: 0.5rem;
+      word-break: break-word;
+    }
+  </style>
+</head>
+<body onload="redirect()">
+  <div class="container">
+    <div class="loader"></div>
+    <p>Redirecting...</p>
+    <div id="error"></div>
+  </div>
+</body>
+</html>
