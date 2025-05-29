@@ -106,10 +106,13 @@ export const getAdDesignByAdSpaceId = async (adSpaceId: string): Promise<AdDesig
       console.error('Error in Strategy 4:', anyError);
     } else {
       console.log(`Found ${anyData?.length || 0} total ad designs in the table`);
+      
+      // Log first few designs for debugging
       if (anyData && anyData.length > 0) {
         console.log(`Sample ad designs: ${JSON.stringify(anyData.slice(0, 3).map(d => ({
           id: d.id,
           ad_space_id: d.ad_space_id,
+          user_id: d.user_id,
           has_image: !!d.image_url
         })))}`);
         
