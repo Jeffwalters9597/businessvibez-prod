@@ -31,14 +31,19 @@ export const supabase = createClient(
       fetch: (...args) => {
         // Add a custom fetch to handle timeouts and retries
         const [resource, config] = args;
-        return fetch(resource, {
-          ...config,
-          headers: {
-            ...config?.headers,
-            'Cache-Control': 'no-cache',
-            'Pragma': 'no-cache'
-          }
-        });
+        
+        // Create a new config object that properly preserves all headers
+        const newConfig = { ...config };
+        
+        // Create a Headers object to properly handle header merging
+        const headers = new Headers(config?.headers || {});
+        headers.set('Cache-Control', 'no-cache');
+        headers.set('Pragma', 'no-cache');
+        
+        // Use the headers object in the new config
+        newConfig.headers = headers;
+        
+        return fetch(resource, newConfig);
       }
     }
   }
