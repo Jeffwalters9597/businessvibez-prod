@@ -180,9 +180,12 @@ const AdBuilder = () => {
     
     const fileExt = file.name.split('.').pop();
     const isVideo = file.type.startsWith('video/');
-    const bucket = isVideo ? 'ad_videos' : 'ad_images';
+    // Use a single 'public' bucket instead of separate buckets for images and videos
+    const bucket = 'public';
+    // Create a folder structure within the bucket
+    const folder = isVideo ? 'ad_videos' : 'ad_images';
     const fileName = `${user.id}-${Date.now()}.${fileExt}`;
-    const filePath = `${fileName}`;
+    const filePath = `${folder}/${fileName}`;
     
     try {
       setIsUploading(true);
@@ -199,6 +202,35 @@ const AdBuilder = () => {
         } catch (compressError) {
           addDebug(`Image compression failed: ${compressError}. Using original image.`);
         }
+      }
+      
+      // Check if the bucket exists before attempting to upload
+      try {
+        const { data: buckets, error: bucketError } = await supabase.storage.listBuckets();
+        
+        if (bucketError) {
+          addDebug(`Error listing buckets: ${bucketError.message}`);
+          throw new Error(`Unable to access storage: ${bucketError.message}`);
+        }
+        
+        // Check if our target bucket exists
+        const bucketExists = buckets.some(b => b.name === bucket);
+        if (!bucketExists) {
+          addDebug(`Bucket '${bucket}' not found. Falling back to 'storage' bucket.`);
+          // Try the 'storage' bucket as a fallback
+          const { data: storageCheck, error: storageError } = await supabase.storage
+            .from('storage')
+            .list();
+            
+          if (storageError) {
+            addDebug(`Fallback bucket check failed: ${storageError.message}`);
+            throw new Error('No available storage buckets found. Please contact support.');
+          }
+          return null;
+        }
+      } catch (bucketCheckError: any) {
+        addDebug(`Error checking bucket: ${bucketCheckError.message}`);
+        // Continue with the upload attempt as the bucket might still exist
       }
       
       // Upload media to Supabase Storage
@@ -223,7 +255,7 @@ const AdBuilder = () => {
     } catch (error: any) {
       console.error('Error uploading media:', error);
       addDebug(`Upload failed: ${error.message}`);
-      toast.error('Failed to upload media');
+      toast.error('Failed to upload media. Please try again or contact support.');
       return null;
     } finally {
       setIsUploading(false);
@@ -334,7 +366,8 @@ const AdBuilder = () => {
           }
         } else {
           addDebug('Media upload failed');
-          throw new Error('Failed to upload media');
+          toast.error('Media upload failed. Proceeding without media.');
+          // Continue without the media - this allows creating ads without media in case of upload failures
         }
       }
 
