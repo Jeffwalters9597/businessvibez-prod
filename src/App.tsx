@@ -32,16 +32,31 @@ function App() {
   
   useEffect(() => {
     // Check for existing session on app load
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) {
-        setUser(session.user);
-      }
-    });
+    supabase.auth.getSession()
+      .then(({ data: { session } }) => {
+        if (session) {
+          setUser(session.user);
+        } else {
+          setUser(null);
+        }
+      })
+      .catch(async (error) => {
+        console.error('Session retrieval error:', error);
+        // Clear any invalid session data
+        await supabase.auth.signOut();
+        setUser(null);
+      });
     
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        setUser(session?.user ?? null);
+      async (event, session) => {
+        if (event === 'TOKEN_REFRESHED') {
+          setUser(session?.user ?? null);
+        } else if (event === 'SIGNED_OUT' || event === 'USER_DELETED') {
+          setUser(null);
+        } else {
+          setUser(session?.user ?? null);
+        }
       }
     );
     
