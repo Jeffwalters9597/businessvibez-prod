@@ -77,8 +77,10 @@ const Dashboard = () => {
           .eq('id', user?.id)
           .maybeSingle();
 
-        if (profileError) throw profileError;
-        if (profileData) {
+        if (profileError) {
+          console.error('Profile error:', profileError);
+          // Continue with other fetches even if this one fails
+        } else if (profileData) {
           setProfile(profileData);
         }
 
@@ -96,16 +98,17 @@ const Dashboard = () => {
           .eq('user_id', user?.id)
           .maybeSingle();
 
-        if (subscriptionError) throw subscriptionError;
-
-        if (subscriptionData) {
+        if (subscriptionError) {
+          console.error('Subscription error:', subscriptionError);
+          // Continue with other fetches even if this one fails
+        } else if (subscriptionData) {
           setSubscription({
             tier: {
-              name: subscriptionData.tier_id.name,
-              features: subscriptionData.tier_id.features
+              name: subscriptionData.tier_id?.name || 'Free',
+              features: subscriptionData.tier_id?.features || []
             },
-            status: subscriptionData.status,
-            current_period_end: subscriptionData.current_period_end
+            status: subscriptionData.status || 'active',
+            current_period_end: subscriptionData.current_period_end || new Date().toISOString()
           });
         }
 
@@ -116,9 +119,10 @@ const Dashboard = () => {
           .eq('user_id', user?.id)
           .maybeSingle();
 
-        if (limitsError) throw limitsError;
-
-        if (limitsData) {
+        if (limitsError) {
+          console.error('Usage limits error:', limitsError);
+          // Continue with other fetches even if this one fails
+        } else if (limitsData) {
           setUsageLimits(limitsData);
         }
 
@@ -128,16 +132,50 @@ const Dashboard = () => {
           .select('*', { count: 'exact', head: true })
           .eq('user_id', user?.id);
 
-        if (adError) throw adError;
+        if (adError) {
+          console.error('Ad designs count error:', adError);
+        } else {
+          setStats(prev => ({
+            ...prev,
+            adDesigns: adCount || 0
+          }));
+        }
 
-        setStats({
-          adDesigns: adCount || 0,
-          smsMessages: usageLimits?.sms_count || 0,
-        });
+        // Set default values if we couldn't fetch real data
+        if (!profile) {
+          setProfile({ business_name: 'Your Business' });
+        }
+        
+        if (!subscription) {
+          setSubscription({
+            tier: {
+              name: 'Free',
+              features: []
+            },
+            status: 'active',
+            current_period_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+          });
+        }
 
       } catch (error) {
         console.error('Error fetching dashboard data:', error);
-        toast.error('Failed to load dashboard data');
+        toast.error('Failed to load some dashboard data');
+        
+        // Set default values for a better user experience even when errors occur
+        if (!profile) {
+          setProfile({ business_name: 'Your Business' });
+        }
+        
+        if (!subscription) {
+          setSubscription({
+            tier: {
+              name: 'Free',
+              features: []
+            },
+            status: 'active',
+            current_period_end: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+          });
+        }
       } finally {
         setIsLoading(false);
       }

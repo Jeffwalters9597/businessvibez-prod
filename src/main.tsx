@@ -49,8 +49,8 @@ const isWebContainerEnvironment = () => {
 };
 
 // Only register service worker if the browser supports it and we're not in a WebContainer environment
-if ('serviceWorker' in navigator && !isWebContainerEnvironment()) {
-  // Register service worker directly
+if ('serviceWorker' in navigator && !isWebContainerEnvironment() && import.meta.env.PROD) {
+  // Only register in production to avoid development issues
   navigator.serviceWorker.register('/ServiceWorker.js')
     .then(registration => {
       console.log('ServiceWorker registration successful with scope: ', registration.scope);
