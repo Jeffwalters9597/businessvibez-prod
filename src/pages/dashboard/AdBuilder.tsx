@@ -105,7 +105,7 @@ const AdBuilder = () => {
       addDebug(`Available storage buckets: ${bucketNames.join(', ') || 'none'}`);
       
       // If public bucket doesn't exist, show a warning to the user
-      if (!bucketNames.includes('public')) {
+      if (!bucketNames.includes('public') && !bucketNames.includes('ad_images')) {
         toast.error('Storage not properly configured. Some features may not work.', { duration: 5000 });
       }
     } catch (error: any) {
@@ -192,7 +192,7 @@ const AdBuilder = () => {
     
     const fileExt = file.name.split('.').pop();
     const fileName = `${user.id}-${Date.now()}.${fileExt}`;
-    const filePath = `ad_images/${fileName}`;
+    const filePath = `${fileName}`;
     
     try {
       setIsUploading(true);
@@ -220,12 +220,33 @@ const AdBuilder = () => {
       const bucketNames = buckets.map(b => b.name);
       addDebug(`Available storage buckets: ${bucketNames.join(', ')}`);
       
-      // Try to find an available bucket to use
-      let bucketToUse = 'public';
+      // Try different buckets in order of preference
       let uploadResult;
       let uploadError;
       
-      // First try 'public' bucket if it exists
+      // First try 'ad_images' bucket if it exists (preferred)
+      if (bucketNames.includes('ad_images')) {
+        addDebug('Attempting upload to "ad_images" bucket');
+        uploadResult = await supabase.storage
+          .from('ad_images')
+          .upload(filePath, fileToUpload);
+          
+        uploadError = uploadResult.error;
+        
+        if (!uploadError) {
+          addDebug('Upload to "ad_images" bucket successful');
+          const { data: { publicUrl } } = supabase.storage
+            .from('ad_images')
+            .getPublicUrl(filePath);
+          
+          addDebug(`Generated public URL: ${publicUrl}`);
+          return publicUrl;
+        } else {
+          addDebug(`Upload to "ad_images" bucket failed: ${uploadError.message}`);
+        }
+      }
+      
+      // Next try 'public' bucket if it exists
       if (bucketNames.includes('public')) {
         addDebug('Attempting upload to "public" bucket');
         uploadResult = await supabase.storage
@@ -247,32 +268,9 @@ const AdBuilder = () => {
         }
       }
       
-      // If 'public' bucket doesn't exist or upload failed, try 'storage' bucket
-      if (bucketNames.includes('storage')) {
-        addDebug('Attempting upload to "storage" bucket');
-        bucketToUse = 'storage';
-        uploadResult = await supabase.storage
-          .from('storage')
-          .upload(filePath, fileToUpload);
-          
-        uploadError = uploadResult.error;
-        
-        if (!uploadError) {
-          addDebug('Upload to "storage" bucket successful');
-          const { data: { publicUrl } } = supabase.storage
-            .from('storage')
-            .getPublicUrl(filePath);
-          
-          addDebug(`Generated public URL: ${publicUrl}`);
-          return publicUrl;
-        } else {
-          addDebug(`Upload to "storage" bucket failed: ${uploadError.message}`);
-        }
-      }
-      
       // Try any other available bucket as a last resort
-      if (bucketNames.length > 0 && !bucketNames.includes('public') && !bucketNames.includes('storage')) {
-        bucketToUse = bucketNames[0]; // Use the first available bucket
+      if (bucketNames.length > 0 && !bucketNames.includes('public') && !bucketNames.includes('ad_images')) {
+        const bucketToUse = bucketNames[0]; // Use the first available bucket
         addDebug(`Attempting upload to "${bucketToUse}" bucket as fallback`);
         
         uploadResult = await supabase.storage
@@ -297,7 +295,7 @@ const AdBuilder = () => {
       // If we've tried all options and still failed
       if (!bucketNames.length) {
         addDebug('No storage buckets found in the project');
-        toast.error('Storage is not configured in your Supabase project. Please create a bucket named "public".');
+        toast.error('Storage is not configured in your Supabase project. Please create a bucket named "ad_images" or "public".');
       } else {
         addDebug('All upload attempts failed');
         toast.error('Failed to upload image to any available storage bucket');
@@ -605,7 +603,7 @@ const AdBuilder = () => {
       // First try: Direct query with ad_space_id
       const { data, error } = await supabase
         .from('ad_designs')
-        .select('id, image_url, ad_space_id')
+        .select('id, image_url, ad_space_id, user_id')
         .eq('ad_space_id', adSpaceId)
         .maybeSingle();
       
@@ -832,7 +830,7 @@ const AdBuilder = () => {
                   Your Supabase project doesn't have any storage buckets configured. Image uploads will not work.
                 </p>
                 <p className="text-sm text-amber-700 mt-2">
-                  To fix this, go to your Supabase dashboard, navigate to Storage, and create a bucket named "public" with appropriate permissions.
+                  To fix this, go to your Supabase dashboard, navigate to Storage, and create a bucket named "public" or "ad_images" with appropriate permissions.
                 </p>
               </div>
             </div>
@@ -1070,20 +1068,8 @@ const AdBuilder = () => {
                     onUpload={handleImageUpload}
                     preview={adForm.imagePreview}
                     className="border border-gray-300 rounded-md"
+                    onClear={clearImage}
                   />
-                  
-                  {adForm.imagePreview && (
-                    <div className="flex justify-end">
-                      <Button 
-                        variant="outline" 
-                        size="sm"
-                        onClick={clearImage}
-                        className="text-error-500"
-                      >
-                        Clear Image
-                      </Button>
-                    </div>
-                  )}
                 </div>
               </div>
             ) : (
@@ -1123,7 +1109,7 @@ const AdBuilder = () => {
                     Your Supabase project doesn't have any storage buckets configured. Image uploads will not work.
                   </p>
                   <p className="text-sm text-amber-700 mt-2">
-                    To fix this, go to your Supabase dashboard, navigate to Storage, and create a bucket named "public" with appropriate permissions.
+                    To fix this, go to your Supabase dashboard, navigate to Storage, and create a bucket named "public" or "ad_images" with appropriate permissions.
                   </p>
                 </div>
               </div>

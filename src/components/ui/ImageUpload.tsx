@@ -10,6 +10,7 @@ interface ImageUploadProps {
   accept?: string[];
   maxSize?: number;
   preview?: string;
+  onClear?: () => void;
 }
 
 const ImageUpload: React.FC<ImageUploadProps> = ({
@@ -17,7 +18,8 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
   className,
   accept = ['image/jpeg', 'image/png', 'image/gif'],
   maxSize = 5242880, // 5MB
-  preview
+  preview,
+  onClear
 }) => {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -121,6 +123,20 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
             <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 opacity-0 hover:opacity-100 transition-opacity rounded-md">
               <Upload className="w-8 h-8 text-white" />
             </div>
+            
+            {onClear && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onClear();
+                }}
+                className="absolute -top-2 -right-2 bg-white rounded-full p-1 shadow-md hover:bg-gray-100"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
           </div>
         ) : (
           <div className="space-y-2 py-4">
