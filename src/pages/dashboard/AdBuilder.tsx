@@ -212,6 +212,12 @@ const AdBuilder = () => {
     });
   };
 
+  // Function to check if a URL is a blob URL
+  const isBlobUrl = (url: string | null | undefined): boolean => {
+    if (!url) return false;
+    return url.startsWith('blob:');
+  };
+
   const uploadImageToStorage = async (file: File): Promise<string | null> => {
     if (!file || !user) return null;
     
@@ -399,12 +405,6 @@ const AdBuilder = () => {
         reject(new Error('Error reading file'));
       };
     });
-  };
-
-  // Function to check if a URL is a blob URL
-  const isBlobUrl = (url: string | null | undefined): boolean => {
-    if (!url) return false;
-    return url.startsWith('blob:');
   };
 
   const handleSaveAd = async () => {

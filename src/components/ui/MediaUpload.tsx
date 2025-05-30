@@ -19,7 +19,7 @@ const MediaUpload: React.FC<MediaUploadProps> = ({
   className,
   accept = {
     'image/*': ['.jpeg', '.jpg', '.png', '.gif'],
-    'video/*': ['.mp4', '.mov', '.avi', '.flv', '.hevc']
+    'video/*': ['.mp4', '.mov', '.webm']
   },
   maxSize = 52428800, // 50MB
   preview,
