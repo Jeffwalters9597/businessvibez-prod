@@ -5,7 +5,7 @@ import Card, { CardHeader, CardTitle, CardContent, CardFooter } from '../../comp
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import QrCode from '../../components/ui/QrCode';
-import ImageUpload from '../../components/ui/ImageUpload';
+import MediaUpload from '../../components/ui/MediaUpload';
 import { 
   Plus, 
   Trash2, 
@@ -14,7 +14,8 @@ import {
   Link,
   QrCode as QrIcon,
   Edit,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Film
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -28,8 +29,10 @@ interface AdDesign {
     headline?: string;
     subheadline?: string;
     redirectUrl?: string;
+    mediaType?: 'image' | 'video';
   };
   image_url?: string;
+  video_url?: string;
   ad_space_id?: string;
   ad_spaces?: {
     id: string;
@@ -55,8 +58,9 @@ const AdBuilder = () => {
     name: '',
     background: '#FFFFFF',
     redirectUrl: '',
-    imageFile: null as File | null,
-    imagePreview: '',
+    mediaFile: null as File | null,
+    mediaPreview: '',
+    mediaType: 'image' as 'image' | 'video'
   });
   const [isUploading, setIsUploading] = useState(false);
   const [debugInfo, setDebugInfo] = useState<string[]>([]);
@@ -71,13 +75,17 @@ const AdBuilder = () => {
       const isRedirectMode = !selectedDesign.content.headline && 
         (selectedDesign.content.redirectUrl || selectedDesign.ad_spaces?.content?.url);
       
+      const mediaType = selectedDesign.content.mediaType || 
+                       (selectedDesign.video_url ? 'video' : 'image');
+      
       setAdMode(isRedirectMode ? 'redirect' : 'custom');
       setAdForm({
         name: selectedDesign.name || '',
         background: selectedDesign.background || '#FFFFFF',
         redirectUrl: selectedDesign.content.redirectUrl || selectedDesign.ad_spaces?.content?.url || '',
-        imageFile: null,
-        imagePreview: selectedDesign.image_url || '',
+        mediaFile: null,
+        mediaPreview: selectedDesign.video_url || selectedDesign.image_url || '',
+        mediaType: mediaType
       });
     }
   }, [viewMode, selectedDesign]);
@@ -116,33 +124,39 @@ const AdBuilder = () => {
     return `${window.location.origin}/view?ad=${adId}`;
   };
 
-  const handleImageUpload = async (file: File) => {
+  const handleMediaUpload = async (file: File) => {
     if (!file) return;
     
-    // Check file size (max 5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error('Image too large. Maximum size is 5MB.');
+    // Check file size (max 50MB)
+    if (file.size > 50 * 1024 * 1024) {
+      toast.error('File too large. Maximum size is 50MB.');
       return;
     }
     
-    // Check dimensions
-    try {
-      const imageDimensions = await getImageDimensions(file);
-      if (imageDimensions.width > 2500 || imageDimensions.height > 2500) {
-        toast.warning('Image is very large. Consider using a smaller image for better performance.');
+    // Determine media type
+    const isVideo = file.type.startsWith('video/');
+    
+    // For images, check dimensions
+    if (!isVideo) {
+      try {
+        const imageDimensions = await getImageDimensions(file);
+        if (imageDimensions.width > 2500 || imageDimensions.height > 2500) {
+          toast.warning('Image is very large. Consider using a smaller image for better performance.');
+        }
+      } catch (err) {
+        console.error("Couldn't check image dimensions:", err);
       }
-    } catch (err) {
-      console.error("Couldn't check image dimensions:", err);
     }
     
     // Create object URL for preview
     const previewUrl = URL.createObjectURL(file);
     setAdForm(prev => ({
       ...prev,
-      imageFile: file,
-      imagePreview: previewUrl
+      mediaFile: file,
+      mediaPreview: previewUrl,
+      mediaType: isVideo ? 'video' : 'image'
     }));
-    addDebug(`Image selected: ${file.name} (${Math.round(file.size / 1024)} KB)`);
+    addDebug(`Media selected: ${file.name} (${Math.round(file.size / 1024)} KB) - Type: ${isVideo ? 'video' : 'image'}`);
   };
 
   // Helper function to get image dimensions
@@ -161,20 +175,24 @@ const AdBuilder = () => {
     });
   };
 
-  const uploadImageToStorage = async (file: File): Promise<string | null> => {
+  const uploadMediaToStorage = async (file: File): Promise<string | null> => {
     if (!file || !user) return null;
     
     const fileExt = file.name.split('.').pop();
+    const isVideo = file.type.startsWith('video/');
+    const bucket = isVideo ? 'ad_videos' : 'ad_images';
     const fileName = `${user.id}-${Date.now()}.${fileExt}`;
     const filePath = `${fileName}`;
     
     try {
       setIsUploading(true);
-      addDebug(`Uploading image to Supabase storage: ${fileName}`);
+      addDebug(`Uploading ${isVideo ? 'video' : 'image'} to Supabase storage: ${fileName}`);
       
-      // Compress the image if it's very large
+      // For videos, we don't attempt compression
       let fileToUpload = file;
-      if (file.size > 2 * 1024 * 1024) { // If over 2MB
+      
+      // Only compress images if they're large
+      if (!isVideo && file.size > 2 * 1024 * 1024) {
         try {
           fileToUpload = await compressImage(file);
           addDebug(`Compressed image from ${Math.round(file.size/1024)}KB to ${Math.round(fileToUpload.size/1024)}KB`);
@@ -183,9 +201,9 @@ const AdBuilder = () => {
         }
       }
       
-      // Upload image to Supabase Storage
+      // Upload media to Supabase Storage
       const { data, error } = await supabase.storage
-        .from('ad_images')
+        .from(bucket)
         .upload(filePath, fileToUpload);
       
       if (error) {
@@ -193,19 +211,19 @@ const AdBuilder = () => {
         throw error;
       }
       
-      addDebug(`Image uploaded successfully. Path: ${data?.path}`);
+      addDebug(`Media uploaded successfully. Path: ${data?.path}`);
       
       // Get public URL
       const { data: { publicUrl } } = supabase.storage
-        .from('ad_images')
+        .from(bucket)
         .getPublicUrl(filePath);
       
       addDebug(`Generated public URL: ${publicUrl}`);
       return publicUrl;
     } catch (error: any) {
-      console.error('Error uploading image:', error);
+      console.error('Error uploading media:', error);
       addDebug(`Upload failed: ${error.message}`);
-      toast.error('Failed to upload image');
+      toast.error('Failed to upload media');
       return null;
     } finally {
       setIsUploading(false);
@@ -289,27 +307,34 @@ const AdBuilder = () => {
       return;
     }
 
-    // For custom mode, an image is required
-    if (adMode === 'custom' && !adForm.imagePreview) {
-      toast.error('Please upload an image for your custom ad');
+    // For custom mode, a media file is required
+    if (adMode === 'custom' && !adForm.mediaPreview) {
+      toast.error('Please upload an image or video for your custom ad');
       return;
     }
 
     setIsSaving(true);
-    addDebug(`Starting save process for ad: ${adForm.name}, mode: ${adMode}`);
+    addDebug(`Starting save process for ad: ${adForm.name}, mode: ${adMode}, media type: ${adForm.mediaType}`);
 
     try {
-      // Upload image if there's a new file
-      let imageUrl = adForm.imagePreview;
-      if (adForm.imageFile) {
-        addDebug('Uploading new image file');
-        const uploadedUrl = await uploadImageToStorage(adForm.imageFile);
+      // Upload media if there's a new file
+      let imageUrl = adForm.mediaType === 'image' ? adForm.mediaPreview : null;
+      let videoUrl = adForm.mediaType === 'video' ? adForm.mediaPreview : null;
+      
+      if (adForm.mediaFile) {
+        addDebug('Uploading new media file');
+        const uploadedUrl = await uploadMediaToStorage(adForm.mediaFile);
         if (uploadedUrl) {
-          imageUrl = uploadedUrl;
-          addDebug(`New image URL: ${imageUrl}`);
+          if (adForm.mediaType === 'image') {
+            imageUrl = uploadedUrl;
+            addDebug(`New image URL: ${imageUrl}`);
+          } else {
+            videoUrl = uploadedUrl;
+            addDebug(`New video URL: ${videoUrl}`);
+          }
         } else {
-          addDebug('Image upload failed');
-          throw new Error('Failed to upload image');
+          addDebug('Media upload failed');
+          throw new Error('Failed to upload media');
         }
       }
 
@@ -375,18 +400,20 @@ const AdBuilder = () => {
       // STEP 2: Create or update the ad design
       addDebug(`STEP 2: ${isEditing ? 'Updating' : 'Creating'} ad design with ad_space_id: ${adSpaceId}`);
       
-      // CRITICAL: Explicitly include image_url and ad_space_id in the record
+      // Include both image_url and video_url in the record
       const adDesignData = {
         user_id: user?.id,
         name: adForm.name,
         background: adForm.background,
         content: adMode === 'custom'
-          ? {}
+          ? { mediaType: adForm.mediaType }
           : {
-              redirectUrl: adForm.redirectUrl
+              redirectUrl: adForm.redirectUrl,
+              mediaType: adForm.mediaType
             },
         ad_space_id: adSpaceId,
-        image_url: imageUrl
+        image_url: imageUrl,
+        video_url: videoUrl
       };
       
       addDebug(`Ad design data being saved: ${JSON.stringify({
@@ -424,10 +451,11 @@ const AdBuilder = () => {
         } else {
           addDebug(`Ad design updated successfully with ID: ${adDesign.id}`);
           addDebug(`Updated ad design has image_url: ${adDesign.image_url ? 'yes' : 'no'}`);
+          addDebug(`Updated ad design has video_url: ${adDesign.video_url ? 'yes' : 'no'}`);
           addDebug(`Updated ad design has ad_space_id: ${adDesign.ad_space_id ? adDesign.ad_space_id : 'no'}`);
           
           console.log('AD_BUILDER_SUPABASE_SUCCESS [ad_designs update]: Updated ad_design data:', JSON.stringify(adDesign, null, 2));
-          console.log('AD_BUILDER_VERIFY_LINK: ad_design.id =', adDesign.id, '; ad_design.ad_space_id =', adDesign.ad_space_id, '; ad_design.image_url =', adDesign.image_url);
+          console.log('AD_BUILDER_VERIFY_LINK: ad_design.id =', adDesign.id, '; ad_design.ad_space_id =', adDesign.ad_space_id, '; ad_design.media =', adDesign.image_url || adDesign.video_url);
           
           // Update the design in the local state
           setSavedDesigns(prev => 
@@ -467,11 +495,12 @@ const AdBuilder = () => {
         } else {
           addDebug(`New ad design created with ID: ${adDesign.id}`);
           addDebug(`New ad design has image_url: ${adDesign.image_url ? 'yes' : 'no'}`);
+          addDebug(`New ad design has video_url: ${adDesign.video_url ? 'yes' : 'no'}`);
           addDebug(`New ad design has ad_space_id: ${adDesign.ad_space_id ? adDesign.ad_space_id : 'no'}`);
           
           // Log the successful save with detailed information
           console.log('AD_BUILDER_SUPABASE_SUCCESS [ad_designs insert]: Saved ad_design data:', JSON.stringify(adDesign, null, 2));
-          console.log('AD_BUILDER_VERIFY_LINK: ad_design.id =', adDesign.id, '; ad_design.ad_space_id =', adDesign.ad_space_id, '; ad_design.image_url =', adDesign.image_url);
+          console.log('AD_BUILDER_VERIFY_LINK: ad_design.id =', adDesign.id, '; ad_design.ad_space_id =', adDesign.ad_space_id, '; ad_design.media =', adDesign.image_url || adDesign.video_url);
           
           setSavedDesigns(prev => [adDesign, ...prev]);
         }
@@ -503,7 +532,7 @@ const AdBuilder = () => {
       // First try: Direct query with ad_space_id
       const { data, error } = await supabase
         .from('ad_designs')
-        .select('id, image_url, ad_space_id')
+        .select('id, image_url, video_url, ad_space_id')
         .eq('ad_space_id', adSpaceId)
         .maybeSingle();
       
@@ -511,7 +540,7 @@ const AdBuilder = () => {
         addDebug(`Verification query error: ${error.message}`);
       } else if (data) {
         addDebug(`Verification successful: Found ad design ID ${data.id}`);
-        addDebug(`Verification details: image_url=${data.image_url ? 'present' : 'missing'}, ad_space_id=${data.ad_space_id}`);
+        addDebug(`Verification details: image_url=${data.image_url ? 'present' : 'missing'}, video_url=${data.video_url ? 'present' : 'missing'}, ad_space_id=${data.ad_space_id}`);
         return;
       } else {
         addDebug('Verification failed: No ad design found with this ad_space_id');
@@ -520,7 +549,7 @@ const AdBuilder = () => {
       // Second try: Get all ad designs for this user
       const { data: userDesigns, error: userError } = await supabase
         .from('ad_designs')
-        .select('id, ad_space_id, image_url')
+        .select('id, ad_space_id, image_url, video_url')
         .eq('user_id', user?.id)
         .order('created_at', { ascending: false })
         .limit(10);
@@ -562,8 +591,9 @@ const AdBuilder = () => {
       name: '',
       background: '#FFFFFF',
       redirectUrl: '',
-      imageFile: null,
-      imagePreview: '',
+      mediaFile: null,
+      mediaPreview: '',
+      mediaType: 'image'
     });
     setAdMode('custom');
     setSelectedDesign(null);
@@ -594,11 +624,11 @@ const AdBuilder = () => {
     setViewMode('edit');
   };
 
-  const clearImage = () => {
+  const clearMedia = () => {
     setAdForm(prev => ({
       ...prev,
-      imageFile: null,
-      imagePreview: ''
+      mediaFile: null,
+      mediaPreview: ''
     }));
   };
 
@@ -639,80 +669,102 @@ const AdBuilder = () => {
         </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {savedDesigns.map((design) => (
-            <Card key={design.id} className="hover:shadow-lg transition-shadow">
-              <CardHeader>
-                <CardTitle>{design.name}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div 
-                  className="aspect-video rounded-md p-4 mb-4 relative overflow-hidden"
-                  style={{ backgroundColor: design.background }}
-                >
-                  {design.image_url && (
-                    <img 
-                      src={design.image_url} 
-                      alt="" 
-                      className="absolute inset-0 w-full h-full object-cover"
-                      loading="lazy"
-                      crossOrigin="anonymous"
-                    />
-                  )}
-                  <div className="relative z-10 flex items-center justify-center h-full">
-                    {design.content.redirectUrl || design.ad_spaces?.content?.url ? (
-                      <div className="text-center">
-                        <p className="text-sm text-white bg-black bg-opacity-30 p-2 rounded">
-                          {design.content.redirectUrl || design.ad_spaces?.content?.url}
-                        </p>
-                      </div>
-                    ) : (
-                      design.image_url && (
+          {savedDesigns.map((design) => {
+            const isVideo = design.video_url || design.content.mediaType === 'video';
+            
+            return (
+              <Card key={design.id} className="hover:shadow-lg transition-shadow">
+                <CardHeader>
+                  <CardTitle>{design.name}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div 
+                    className="aspect-video rounded-md p-4 mb-4 relative overflow-hidden"
+                    style={{ backgroundColor: design.background }}
+                  >
+                    {isVideo && design.video_url ? (
+                      <video 
+                        src={design.video_url}
+                        className="absolute inset-0 w-full h-full object-cover"
+                        muted
+                        playsInline
+                        loop
+                        onMouseOver={(e) => (e.target as HTMLVideoElement).play()}
+                        onMouseOut={(e) => (e.target as HTMLVideoElement).pause()}
+                        crossOrigin="anonymous"
+                      />
+                    ) : design.image_url && (
+                      <img 
+                        src={design.image_url} 
+                        alt="" 
+                        className="absolute inset-0 w-full h-full object-cover"
+                        loading="lazy"
+                        crossOrigin="anonymous"
+                      />
+                    )}
+                    <div className="absolute top-2 right-2 bg-black bg-opacity-50 rounded-full p-1.5">
+                      {isVideo ? (
+                        <Film size={16} className="text-white" />
+                      ) : (
+                        <ImageIcon size={16} className="text-white" />
+                      )}
+                    </div>
+                    <div className="relative z-10 flex items-center justify-center h-full">
+                      {design.content.redirectUrl || design.ad_spaces?.content?.url ? (
                         <div className="text-center">
                           <p className="text-sm text-white bg-black bg-opacity-30 p-2 rounded">
-                            Custom Ad
+                            {design.content.redirectUrl || design.ad_spaces?.content?.url}
                           </p>
                         </div>
-                      )
-                    )}
+                      ) : (
+                        (design.image_url || design.video_url) && (
+                          <div className="text-center">
+                            <p className="text-sm text-white bg-black bg-opacity-30 p-2 rounded">
+                              Custom Ad
+                            </p>
+                          </div>
+                        )
+                      )}
+                    </div>
                   </div>
-                </div>
-                <div className="flex justify-between items-center">
-                  <div className="text-sm text-gray-500">
-                    Created: {new Date(design.created_at).toLocaleDateString()}
+                  <div className="flex justify-between items-center">
+                    <div className="text-sm text-gray-500">
+                      Created: {new Date(design.created_at).toLocaleDateString()}
+                    </div>
                   </div>
-                </div>
-              </CardContent>
-              <CardFooter className="flex justify-between">
-                <div className="flex gap-2">
-                  <Button 
-                    variant="outline" 
-                    onClick={() => {
-                      setSelectedDesign(design);
-                      setViewMode('detail');
-                    }}
-                    leftIcon={<Eye size={16} />}
-                  >
-                    View
-                  </Button>
+                </CardContent>
+                <CardFooter className="flex justify-between">
+                  <div className="flex gap-2">
+                    <Button 
+                      variant="outline" 
+                      onClick={() => {
+                        setSelectedDesign(design);
+                        setViewMode('detail');
+                      }}
+                      leftIcon={<Eye size={16} />}
+                    >
+                      View
+                    </Button>
+                    <Button 
+                      variant="outline"
+                      onClick={() => handleEditAd(design)}
+                      leftIcon={<Edit size={16} />}
+                    >
+                      Edit
+                    </Button>
+                  </div>
                   <Button 
                     variant="outline"
-                    onClick={() => handleEditAd(design)}
-                    leftIcon={<Edit size={16} />}
+                    className="text-error-500 hover:bg-error-50"
+                    onClick={() => handleDeleteAd(design.id)}
+                    leftIcon={<Trash2 size={16} />}
                   >
-                    Edit
+                    Delete
                   </Button>
-                </div>
-                <Button 
-                  variant="outline"
-                  className="text-error-500 hover:bg-error-50"
-                  onClick={() => handleDeleteAd(design.id)}
-                  leftIcon={<Trash2 size={16} />}
-                >
-                  Delete
-                </Button>
-              </CardFooter>
-            </Card>
-          ))}
+                </CardFooter>
+              </Card>
+            );
+          })}
         </div>
       )}
     </div>
@@ -737,6 +789,7 @@ const AdBuilder = () => {
     const qrUrl = generateQrUrl(selectedDesign.ad_spaces.id);
     const redirectUrl = selectedDesign.content.redirectUrl || selectedDesign.ad_spaces.content.url;
     const isRedirectMode = !!redirectUrl;
+    const isVideo = selectedDesign.video_url || selectedDesign.content.mediaType === 'video';
 
     return (
       <div className="space-y-6">
@@ -765,7 +818,14 @@ const AdBuilder = () => {
                 className="aspect-video rounded-lg p-8 relative overflow-hidden"
                 style={{ backgroundColor: selectedDesign.background }}
               >
-                {selectedDesign.image_url && (
+                {isVideo && selectedDesign.video_url ? (
+                  <video 
+                    src={selectedDesign.video_url} 
+                    className="absolute inset-0 w-full h-full object-cover"
+                    controls
+                    crossOrigin="anonymous"
+                  />
+                ) : selectedDesign.image_url && (
                   <img 
                     src={selectedDesign.image_url} 
                     alt="" 
@@ -774,6 +834,13 @@ const AdBuilder = () => {
                     crossOrigin="anonymous"
                   />
                 )}
+                <div className="absolute top-2 right-2 bg-black bg-opacity-50 rounded-full p-2">
+                  {isVideo ? (
+                    <Film size={20} className="text-white" />
+                  ) : (
+                    <ImageIcon size={20} className="text-white" />
+                  )}
+                </div>
                 <div className="relative z-10 flex items-center justify-center h-full">
                   {isRedirectMode && redirectUrl ? (
                     <div className="text-center">
@@ -781,7 +848,7 @@ const AdBuilder = () => {
                         {redirectUrl}
                       </p>
                     </div>
-                  ) : selectedDesign.image_url ? (
+                  ) : (selectedDesign.image_url || selectedDesign.video_url) ? (
                     <div className="text-center">
                       <p className="text-white bg-black bg-opacity-30 p-3 rounded">
                         Custom Ad
@@ -838,6 +905,22 @@ const AdBuilder = () => {
                   </div>
                 </div>
                 <div>
+                  <h3 className="text-sm font-medium text-gray-500">Media Type</h3>
+                  <p className="flex items-center gap-1">
+                    {isVideo ? (
+                      <>
+                        <Film size={16} />
+                        <span>Video</span>
+                      </>
+                    ) : (
+                      <>
+                        <ImageIcon size={16} />
+                        <span>Image</span>
+                      </>
+                    )}
+                  </p>
+                </div>
+                <div>
                   {isRedirectMode ? (
                     <>
                       <h3 className="text-sm font-medium text-gray-500">Redirect URL</h3>
@@ -866,6 +949,12 @@ const AdBuilder = () => {
                   <div>
                     <h3 className="text-sm font-medium text-gray-500">Image URL</h3>
                     <p className="text-xs font-mono break-all">{selectedDesign.image_url}</p>
+                  </div>
+                )}
+                {selectedDesign.video_url && (
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-500">Video URL</h3>
+                    <p className="text-xs font-mono break-all">{selectedDesign.video_url}</p>
                   </div>
                 )}
               </CardContent>
@@ -940,26 +1029,16 @@ const AdBuilder = () => {
                 
                 <div className="space-y-2">
                   <label className="block text-sm font-medium text-gray-700">
-                    Upload Image
+                    Upload Media
                   </label>
-                  <ImageUpload 
-                    onUpload={handleImageUpload}
-                    preview={adForm.imagePreview}
+                  <MediaUpload 
+                    onUpload={handleMediaUpload}
+                    preview={adForm.mediaPreview}
+                    previewType={adForm.mediaType}
+                    maxSize={50 * 1024 * 1024} // 50MB
+                    onClear={clearMedia}
                     className="border border-gray-300 rounded-md"
                   />
-                  
-                  {adForm.imagePreview && (
-                    <div className="flex justify-end">
-                      <Button 
-                        variant="outline" 
-                        size="sm"
-                        onClick={clearImage}
-                        className="text-error-500"
-                      >
-                        Clear Image
-                      </Button>
-                    </div>
-                  )}
                 </div>
               </div>
             ) : (

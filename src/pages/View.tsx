@@ -23,8 +23,10 @@ interface AdSpace {
 interface AdDesign {
   id: string;
   image_url?: string;
+  video_url?: string;
   content: {
     redirectUrl?: string;
+    mediaType?: 'image' | 'video';
   };
 }
 
@@ -43,13 +45,14 @@ const View = () => {
   const [redirectUrl, setRedirectUrl] = useState<string | null>(null);
   const [redirectCountdown, setRedirectCountdown] = useState(3);
   const [redirectClicked, setRedirectClicked] = useState(false);
-  const [imageLoaded, setImageLoaded] = useState(false);
-  const [imageError, setImageError] = useState(false);
+  const [mediaLoaded, setMediaLoaded] = useState(false);
+  const [mediaError, setMediaError] = useState(false);
   const [debug, setDebug] = useState<string[]>([]);
   const [deviceInfo, setDeviceInfo] = useState<string>('');
   const [isMobile, setIsMobile] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
   const imageRef = useRef<HTMLImageElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   const addDebug = (message: string) => {
     console.log(message);
@@ -174,13 +177,16 @@ const View = () => {
                     addDebug(`Mobile direct query successful: ${mobileAdDesign.id}`);
                     setAdDesign(mobileAdDesign);
                     
-                    // Pre-fetch image for mobile
-                    if (mobileAdDesign.image_url) {
+                    // Pre-fetch image or video for mobile
+                    if (mobileAdDesign.video_url) {
+                      addDebug(`Found video: ${mobileAdDesign.video_url}`);
+                      setMediaLoaded(true); // We'll handle video loading in the component
+                    } else if (mobileAdDesign.image_url) {
                       const preloadSuccess = await preloadImage(mobileAdDesign.image_url);
                       addDebug(`Mobile image preload ${preloadSuccess ? 'successful' : 'failed'}: ${mobileAdDesign.image_url}`);
                       
                       if (!preloadSuccess) {
-                        setImageError(true);
+                        setMediaError(true);
                       }
                     }
                   } else {
@@ -194,12 +200,15 @@ const View = () => {
                       addDebug(`Standard method found design: ${adDesignData.id}`);
                       setAdDesign(adDesignData);
                       
-                      if (adDesignData.image_url) {
+                      if (adDesignData.video_url) {
+                        addDebug(`Found video: ${adDesignData.video_url}`);
+                        setMediaLoaded(true);
+                      } else if (adDesignData.image_url) {
                         const preloadSuccess = await preloadImage(adDesignData.image_url);
                         addDebug(`Image preload ${preloadSuccess ? 'successful' : 'failed'}: ${adDesignData.image_url}`);
                         
                         if (!preloadSuccess) {
-                          setImageError(true);
+                          setMediaError(true);
                         }
                       }
                     } else {
@@ -254,7 +263,7 @@ const View = () => {
                   const adDesignData = await getAdDesignByAdSpaceId(adSpaceId);
                   
                   if (adDesignData) {
-                    addDebug(`Ad design found with image: ${adDesignData.image_url ? 'yes' : 'no'}`);
+                    addDebug(`Ad design found with image: ${adDesignData.image_url ? 'yes' : 'no'}, video: ${adDesignData.video_url ? 'yes' : 'no'}`);
                     setAdDesign(adDesignData);
                     
                     // If this is a redirect ad design, use its redirect URL
@@ -264,7 +273,10 @@ const View = () => {
                     }
 
                     // Preload the image if available
-                    if (adDesignData.image_url) {
+                    if (adDesignData.video_url) {
+                      addDebug(`Found video: ${adDesignData.video_url}`);
+                      setMediaLoaded(true);
+                    } else if (adDesignData.image_url) {
                       addDebug(`Pre-fetching image: ${adDesignData.image_url}`);
                       const imgCache = new Image();
                       imgCache.src = adDesignData.image_url;
@@ -368,35 +380,42 @@ const View = () => {
 
   // Pre-load image with better error handling specifically for mobile
   useEffect(() => {
-    if (adDesign?.image_url) {
-      addDebug(`Preloading image: ${adDesign.image_url}`);
+    if (adDesign) {
+      const isVideo = adDesign.video_url || adDesign.content.mediaType === 'video';
       
-      // For mobile, we'll use our special mobile preloader
-      if (isMobile) {
-        const loadMobileImage = async () => {
-          const success = await preloadImage(adDesign.image_url!);
-          setImageLoaded(success);
-          setImageError(!success);
-        };
+      if (isVideo && adDesign.video_url) {
+        addDebug(`Video ad detected: ${adDesign.video_url}`);
+        setMediaLoaded(true); // We'll handle video loading in the component
+      } else if (adDesign.image_url) {
+        addDebug(`Preloading image: ${adDesign.image_url}`);
         
-        loadMobileImage();
+        // For mobile, we'll use our special mobile preloader
+        if (isMobile) {
+          const loadMobileImage = async () => {
+            const success = await preloadImage(adDesign.image_url!);
+            setMediaLoaded(success);
+            setMediaError(!success);
+          };
+          
+          loadMobileImage();
+        } else {
+          // Desktop approach
+          const img = new Image();
+          img.onload = () => {
+            addDebug("Image loaded successfully");
+            setMediaLoaded(true);
+          };
+          img.onerror = () => {
+            addDebug(`Failed to load image: ${adDesign.image_url}`);
+            setMediaError(true);
+          };
+          img.src = adDesign.image_url;
+        }
       } else {
-        // Desktop approach
-        const img = new Image();
-        img.onload = () => {
-          addDebug("Image loaded successfully");
-          setImageLoaded(true);
-        };
-        img.onerror = () => {
-          addDebug(`Failed to load image: ${adDesign.image_url}`);
-          setImageError(true);
-        };
-        img.src = adDesign.image_url;
+        addDebug("No media URL to preload");
       }
-    } else {
-      addDebug("No image URL to preload");
     }
-  }, [adDesign?.image_url, isMobile]);
+  }, [adDesign?.image_url, adDesign?.video_url, isMobile]);
 
   // Manual redirect handler
   const handleRedirect = () => {
@@ -419,27 +438,34 @@ const View = () => {
     }
   };
 
-  // Enhanced image error handler for mobile
-  const handleImageError = () => {
-    addDebug("Image error triggered by img onError event");
-    setImageError(true);
+  // Handle media error
+  const handleMediaError = () => {
+    addDebug("Media error triggered by onError event");
+    setMediaError(true);
   };
 
-  // Handle image load success
-  const handleImageLoad = () => {
-    addDebug("Image load triggered by img onLoad event");
-    setImageLoaded(true);
+  // Handle media load success
+  const handleMediaLoad = () => {
+    addDebug("Media load triggered by onLoad event");
+    setMediaLoaded(true);
   };
 
-  // Try a different approach to load images on mobile
-  const forceReloadImage = () => {
-    if (!adDesign?.image_url || !imageRef.current) return;
+  // Try a different approach to load media on mobile
+  const forceReloadMedia = () => {
+    if (!adDesign) return;
     
     try {
-      // Add a cache-busting parameter
-      const cacheBuster = `?t=${Date.now()}`;
-      imageRef.current.src = adDesign.image_url + cacheBuster;
-      addDebug("Forcing image reload with cache-busting");
+      if (adDesign.video_url && videoRef.current) {
+        // Add a cache-busting parameter
+        const cacheBuster = `?t=${Date.now()}`;
+        videoRef.current.src = adDesign.video_url + cacheBuster;
+        addDebug("Forcing video reload with cache-busting");
+      } else if (adDesign.image_url && imageRef.current) {
+        // Add a cache-busting parameter
+        const cacheBuster = `?t=${Date.now()}`;
+        imageRef.current.src = adDesign.image_url + cacheBuster;
+        addDebug("Forcing image reload with cache-busting");
+      }
     } catch (err) {
       addDebug(`Force reload failed: ${err}`);
     }
@@ -489,7 +515,68 @@ const View = () => {
     );
   }
 
-  // Mobile-optimized custom ad with image display
+  // Video ad with custom design
+  if (adDesign?.video_url && !redirectUrl) {
+    return (
+      <div 
+        className="min-h-screen flex flex-col items-center justify-center p-0 m-0 overflow-hidden"
+        style={{ 
+          backgroundColor: adData?.theme?.backgroundColor || '#f9fafb'
+        }}
+      >
+        {!mediaLoaded && !mediaError && (
+          <div className="flex flex-col items-center justify-center">
+            <div className="w-16 h-16 border-4 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+            <p className="mt-4 text-gray-600">Loading video...</p>
+          </div>
+        )}
+        
+        <div className="w-full h-full flex items-center justify-center">
+          {mediaError ? (
+            // Fallback when video fails to load
+            <div className="flex flex-col items-center justify-center">
+              <img 
+                src="/missing-image.svg"
+                alt={adData?.title || "Advertisement"}
+                className="w-full h-auto max-h-screen object-contain"
+              />
+              {isMobile && (
+                <button 
+                  onClick={forceReloadMedia}
+                  className="mt-4 px-4 py-2 bg-primary-500 text-white rounded-md"
+                >
+                  Try Again
+                </button>
+              )}
+            </div>
+          ) : (
+            <video 
+              ref={videoRef}
+              src={adDesign.video_url}
+              className={`w-full max-h-screen object-contain ${!mediaLoaded ? 'opacity-0' : 'opacity-100'}`}
+              controls
+              autoPlay
+              playsInline
+              onCanPlay={() => setMediaLoaded(true)}
+              onError={handleMediaError}
+              crossOrigin="anonymous"
+            />
+          )}
+        </div>
+
+        {adData?.title && (mediaLoaded || mediaError) && (
+          <div className="fixed bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white p-4 text-center">
+            <h1 className="text-xl font-bold">{adData.title}</h1>
+            {adData.description && <p className="text-sm mt-1">{adData.description}</p>}
+          </div>
+        )}
+        
+        {showDebugInfo && <DebugPanel messages={debug} />}
+      </div>
+    );
+  }
+
+  // Image ad with custom design
   if (adDesign?.image_url && !redirectUrl) {
     return (
       <div 
@@ -498,7 +585,7 @@ const View = () => {
           backgroundColor: adData?.theme?.backgroundColor || '#f9fafb'
         }}
       >
-        {!imageLoaded && !imageError && (
+        {!mediaLoaded && !mediaError && (
           <div className="flex flex-col items-center justify-center">
             <div className="w-16 h-16 border-4 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
             <p className="mt-4 text-gray-600">Loading image...</p>
@@ -509,7 +596,7 @@ const View = () => {
         )}
         
         <div className="w-full h-full flex items-center justify-center">
-          {imageError ? (
+          {mediaError ? (
             // Fallback image when the main one fails to load
             <div className="flex flex-col items-center justify-center">
               <img 
@@ -519,7 +606,7 @@ const View = () => {
               />
               {isMobile && (
                 <button 
-                  onClick={forceReloadImage}
+                  onClick={forceReloadMedia}
                   className="mt-4 px-4 py-2 bg-primary-500 text-white rounded-md"
                 >
                   Try Again
@@ -531,15 +618,15 @@ const View = () => {
               ref={imageRef}
               src={adDesign.image_url}
               alt={adData?.title || "Advertisement"}
-              onLoad={handleImageLoad}
-              onError={handleImageError}
-              className={`w-full h-auto max-h-screen object-contain ${!imageLoaded ? 'hidden' : 'block'}`}
+              onLoad={handleMediaLoad}
+              onError={handleMediaError}
+              className={`w-full h-auto max-h-screen object-contain ${!mediaLoaded ? 'hidden' : 'block'}`}
               crossOrigin="anonymous"
             />
           )}
         </div>
 
-        {adData?.title && (imageLoaded || imageError) && (
+        {adData?.title && (mediaLoaded || mediaError) && (
           <div className="fixed bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white p-4 text-center">
             <h1 className="text-xl font-bold">{adData.title}</h1>
             {adData.description && <p className="text-sm mt-1">{adData.description}</p>}
@@ -593,14 +680,14 @@ const View = () => {
             )}
           </div>
         )}
-        {(!redirectUrl && (!adDesign?.image_url || imageError)) && (
+        {(!redirectUrl && (!adDesign?.image_url && !adDesign?.video_url || mediaError)) && (
           <div>
             <p className="text-lg font-medium p-4 bg-error-100 text-error-700 rounded-lg">
               This ad doesn't have any content to display
             </p>
-            {imageError && adDesign?.image_url && (
+            {mediaError && (adDesign?.image_url || adDesign?.video_url) && (
               <p className="mt-4 text-sm text-gray-600">
-                There was an error loading the image for this ad.
+                There was an error loading the media for this ad.
               </p>
             )}
             {isMobile && retryCount > 0 && (
