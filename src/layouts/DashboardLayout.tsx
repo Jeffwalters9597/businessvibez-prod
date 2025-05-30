@@ -24,24 +24,33 @@ const DashboardLayout = () => {
   
   const handleSignOut = async () => {
     try {
-      const { error } = await supabase.auth.signOut();
+      // First check if we have an active session
+      const { data: sessionData } = await supabase.auth.getSession();
+      const hasActiveSession = sessionData?.session !== null;
       
-      // Handle session-related errors more robustly
-      if (error) {
-        // Check for common session errors (including 403 status)
-        const isSessionError = 
-          error.status === 403 || 
-          error.message?.includes("session_not_found") || 
-          error.message?.includes("Session from session_id claim in JWT does not exist") ||
-          error.message?.includes("Auth session missing!");
+      // Only try to sign out via API if we have an active session
+      if (hasActiveSession) {
+        const { error } = await supabase.auth.signOut();
         
-        if (isSessionError) {
-          console.log('Session already expired or not found, proceeding with client-side logout');
-          // Continue with client-side logout below
-        } else {
-          // For any non-session related errors, throw to be caught by catch block
-          throw error;
+        // Handle session-related errors more robustly
+        if (error) {
+          // Check for common session errors (including 403 status)
+          const isSessionError = 
+            error.status === 403 || 
+            error.message?.includes("session_not_found") || 
+            error.message?.includes("Session from session_id claim in JWT does not exist") ||
+            error.message?.includes("Auth session missing!");
+          
+          if (isSessionError) {
+            console.log('Session already expired or not found, proceeding with client-side logout');
+            // Continue with client-side logout below
+          } else {
+            // For any non-session related errors, throw to be caught by catch block
+            throw error;
+          }
         }
+      } else {
+        console.log('No active session found, proceeding with client-side logout');
       }
       
       // Always clear local user state and redirect regardless of session errors
