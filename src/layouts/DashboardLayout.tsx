@@ -26,25 +26,34 @@ const DashboardLayout = () => {
     try {
       const { error } = await supabase.auth.signOut();
       
-      // If there's an error but it's just the session not found error,
-      // we can still proceed with client-side logout
-      if (error && (
-        error.message.includes("session_not_found") || 
-        error.message.includes("Session from session_id claim in JWT does not exist")
-      )) {
-        console.log('Session already expired or not found, proceeding with client-side logout');
-      } else if (error) {
-        // For any other errors, throw to be caught by catch block
-        throw error;
+      // Handle session-related errors more robustly
+      if (error) {
+        // Check for common session errors (including 403 status)
+        const isSessionError = 
+          error.status === 403 || 
+          error.message?.includes("session_not_found") || 
+          error.message?.includes("Session from session_id claim in JWT does not exist");
+        
+        if (isSessionError) {
+          console.log('Session already expired or not found, proceeding with client-side logout');
+          // Continue with client-side logout below
+        } else {
+          // For any non-session related errors, throw to be caught by catch block
+          throw error;
+        }
       }
       
-      // Always clear local user state and redirect
+      // Always clear local user state and redirect regardless of session errors
       setUser(null);
       navigate('/login');
       toast.success('Successfully signed out');
     } catch (error) {
-      toast.error('Error signing out');
       console.error('Error signing out:', error);
+      
+      // Still attempt client-side logout even if there was an error
+      setUser(null);
+      navigate('/login');
+      toast.success('Signed out'); // Use success message instead of error
     }
   };
   
