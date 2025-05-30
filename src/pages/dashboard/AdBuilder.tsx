@@ -995,6 +995,7 @@ const AdBuilder = () => {
           <CardContent className="space-y-4">
             <Input
               label="Ad Name"
+              type="text"
               value={adForm.name}
               onChange={(e) => setAdForm({ ...adForm, name: e.target.value })}
               placeholder="Enter ad name"
