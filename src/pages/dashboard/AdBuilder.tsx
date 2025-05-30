@@ -59,7 +59,7 @@ const AdBuilder = () => {
     redirectUrl: '',
     mediaFile: null as File | null,
     mediaPreview: '',
-    isVideo: false,
+    isVideo: false
   });
   const [isUploading, setIsUploading] = useState(false);
   const [debugInfo, setDebugInfo] = useState<string[]>([]);
@@ -85,7 +85,7 @@ const AdBuilder = () => {
         redirectUrl: selectedDesign.content.redirectUrl || selectedDesign.ad_spaces?.content?.url || '',
         mediaFile: null,
         mediaPreview: hasVideo ? selectedDesign.video_url || '' : selectedDesign.image_url || '',
-        isVideo: hasVideo,
+        isVideo: hasVideo
       });
     }
   }, [viewMode, selectedDesign]);
