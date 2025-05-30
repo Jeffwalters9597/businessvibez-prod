@@ -5,7 +5,6 @@ import Card, { CardHeader, CardTitle, CardContent, CardFooter } from '../../comp
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import QrCode from '../../components/ui/QrCode';
-import ImageUpload from '../../components/ui/ImageUpload';
 import MediaUpload from '../../components/ui/MediaUpload';
 import { 
   Plus, 
@@ -54,15 +53,13 @@ const AdBuilder = () => {
   const [savedDesigns, setSavedDesigns] = useState<AdDesign[]>([]);
   const previewRef = useRef<HTMLDivElement>(null);
   const [adMode, setAdMode] = useState<'custom' | 'redirect'>('custom');
-  const [mediaType, setMediaType] = useState<'image' | 'video'>('image');
   const [adForm, setAdForm] = useState({
     name: '',
     background: '#FFFFFF',
     redirectUrl: '',
-    imageFile: null as File | null,
-    imagePreview: '',
-    videoFile: null as File | null,
-    videoPreview: '',
+    mediaFile: null as File | null,
+    mediaPreview: '',
+    isVideo: false,
   });
   const [isUploading, setIsUploading] = useState(false);
   const [debugInfo, setDebugInfo] = useState<string[]>([]);
@@ -77,20 +74,18 @@ const AdBuilder = () => {
       const isRedirectMode = !selectedDesign.content.headline && 
         (selectedDesign.content.redirectUrl || selectedDesign.ad_spaces?.content?.url);
       
-      // Determine media type
+      // Determine if it's a video or image
       const hasVideo = !!selectedDesign.video_url;
       
       setAdMode(isRedirectMode ? 'redirect' : 'custom');
-      setMediaType(hasVideo ? 'video' : 'image');
       
       setAdForm({
         name: selectedDesign.name || '',
         background: selectedDesign.background || '#FFFFFF',
         redirectUrl: selectedDesign.content.redirectUrl || selectedDesign.ad_spaces?.content?.url || '',
-        imageFile: null,
-        imagePreview: selectedDesign.image_url || '',
-        videoFile: null,
-        videoPreview: selectedDesign.video_url || '',
+        mediaFile: null,
+        mediaPreview: hasVideo ? selectedDesign.video_url || '' : selectedDesign.image_url || '',
+        isVideo: hasVideo,
       });
     }
   }, [viewMode, selectedDesign]);
@@ -129,71 +124,48 @@ const AdBuilder = () => {
     return `${window.location.origin}/view?ad=${adId}`;
   };
 
-  const handleImageUpload = async (file: File) => {
-    if (!file) return;
-    
-    // Check file size (max 5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error('Image too large. Maximum size is 5MB.');
-      return;
-    }
-    
-    // Check dimensions
-    try {
-      const imageDimensions = await getImageDimensions(file);
-      if (imageDimensions.width > 2500 || imageDimensions.height > 2500) {
-        toast.warning('Image is very large. Consider using a smaller image for better performance.');
-      }
-    } catch (err) {
-      console.error("Couldn't check image dimensions:", err);
-    }
-    
-    // Create object URL for preview
-    const previewUrl = URL.createObjectURL(file);
-    setAdForm(prev => ({
-      ...prev,
-      imageFile: file,
-      imagePreview: previewUrl,
-      videoFile: null,
-      videoPreview: ''
-    }));
-    setMediaType('image');
-    addDebug(`Image selected: ${file.name} (${Math.round(file.size / 1024)} KB)`);
-  };
-
-  const handleVideoUpload = async (file: File) => {
-    if (!file) return;
-    
-    // Check file size (max 50MB)
-    if (file.size > 50 * 1024 * 1024) {
-      toast.error('Video too large. Maximum size is 50MB.');
-      return;
-    }
-    
-    // Create object URL for preview
-    const previewUrl = URL.createObjectURL(file);
-    setAdForm(prev => ({
-      ...prev,
-      videoFile: file,
-      videoPreview: previewUrl,
-      imageFile: null,
-      imagePreview: ''
-    }));
-    setMediaType('video');
-    addDebug(`Video selected: ${file.name} (${Math.round(file.size / 1024 / 1024)} MB)`);
-  };
-
   const handleMediaUpload = async (file: File) => {
     if (!file) return;
     
-    // Check if it's a video or image
+    // Determine if it's a video or an image based on file type
     const isVideo = file.type.startsWith('video/');
     
+    // Apply appropriate validations based on file type
     if (isVideo) {
-      handleVideoUpload(file);
+      // Check file size (max 50MB)
+      if (file.size > 50 * 1024 * 1024) {
+        toast.error('Video too large. Maximum size is 50MB.');
+        return;
+      }
     } else {
-      handleImageUpload(file);
+      // Check file size (max 5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error('Image too large. Maximum size is 5MB.');
+        return;
+      }
+      
+      // Check dimensions
+      try {
+        const imageDimensions = await getImageDimensions(file);
+        if (imageDimensions.width > 2500 || imageDimensions.height > 2500) {
+          toast.warning('Image is very large. Consider using a smaller image for better performance.');
+        }
+      } catch (err) {
+        console.error("Couldn't check image dimensions:", err);
+      }
     }
+    
+    // Create object URL for preview
+    const previewUrl = URL.createObjectURL(file);
+    
+    setAdForm(prev => ({
+      ...prev,
+      mediaFile: file,
+      mediaPreview: previewUrl,
+      isVideo: isVideo,
+    }));
+    
+    addDebug(`${isVideo ? 'Video' : 'Image'} selected: ${file.name} (${Math.round(file.size / 1024)} KB)`);
   };
 
   // Helper function to get image dimensions
@@ -218,20 +190,21 @@ const AdBuilder = () => {
     return url.startsWith('blob:');
   };
 
-  const uploadImageToStorage = async (file: File): Promise<string | null> => {
-    if (!file || !user) return null;
+  const uploadMediaToStorage = async (file: File): Promise<{url: string | null, isVideo: boolean}> => {
+    if (!file || !user) return {url: null, isVideo: false};
     
+    const isVideo = file.type.startsWith('video/');
     const fileExt = file.name.split('.').pop();
     const fileName = `${user.id}-${Date.now()}.${fileExt}`;
     const filePath = `${fileName}`;
     
     try {
       setIsUploading(true);
-      addDebug(`Uploading image to Supabase storage: ${fileName}`);
+      addDebug(`Uploading ${isVideo ? 'video' : 'image'} to Supabase storage: ${fileName}`);
       
-      // Compress the image if it's very large
+      // Compress image if it's very large (only for images)
       let fileToUpload = file;
-      if (file.size > 2 * 1024 * 1024) { // If over 2MB
+      if (!isVideo && file.size > 2 * 1024 * 1024) { // If over 2MB
         try {
           fileToUpload = await compressImage(file);
           addDebug(`Compressed image from ${Math.round(file.size/1024)}KB to ${Math.round(fileToUpload.size/1024)}KB`);
@@ -240,12 +213,13 @@ const AdBuilder = () => {
         }
       }
       
-      // Upload image to Supabase Storage
+      // Upload to Supabase Storage
       const { data, error } = await supabase.storage
         .from('ad_images')
         .upload(filePath, fileToUpload, {
           cacheControl: '3600',
-          upsert: true // Changed from false to true to ensure upload works
+          upsert: true,
+          contentType: file.type
         });
       
       if (error) {
@@ -253,7 +227,7 @@ const AdBuilder = () => {
         throw error;
       }
       
-      addDebug(`Image uploaded successfully. Path: ${data?.path}`);
+      addDebug(`Upload successful. Path: ${data?.path}`);
       
       // Get public URL
       const { data: { publicUrl } } = supabase.storage
@@ -261,83 +235,12 @@ const AdBuilder = () => {
         .getPublicUrl(filePath);
       
       addDebug(`Generated public URL: ${publicUrl}`);
-      return publicUrl;
+      return { url: publicUrl, isVideo };
     } catch (error: any) {
-      console.error('Error uploading image:', error);
+      console.error(`Error uploading ${isVideo ? 'video' : 'image'}:`, error);
       addDebug(`Upload failed: ${error.message}`);
-      toast.error('Failed to upload image');
-      return null;
-    } finally {
-      setIsUploading(false);
-    }
-  };
-
-  const uploadVideoToStorage = async (file: File): Promise<string | null> => {
-    if (!file || !user) return null;
-    
-    const fileExt = file.name.split('.').pop();
-    const fileName = `${user.id}-${Date.now()}.${fileExt}`;
-    const filePath = `${fileName}`;
-    
-    try {
-      setIsUploading(true);
-      addDebug(`Uploading video to Supabase storage: ${fileName} (${Math.round(file.size/1024/1024)}MB)`);
-      
-      // Try to upload to ad_images bucket (we'll use the same bucket for simplicity)
-      const { data, error } = await supabase.storage
-        .from('ad_images')
-        .upload(filePath, file, {
-          cacheControl: '3600',
-          upsert: true, // Changed from false to true to ensure upload works
-          contentType: file.type // Explicitly set content type
-        });
-      
-      if (error) {
-        addDebug(`Video storage upload error: ${error.message}`);
-        throw error;
-      }
-      
-      addDebug(`Video uploaded successfully. Path: ${data?.path}`);
-      
-      // Get public URL
-      const { data: { publicUrl } } = supabase.storage
-        .from('ad_images')
-        .getPublicUrl(filePath);
-      
-      addDebug(`Generated video public URL: ${publicUrl}`);
-      return publicUrl;
-    } catch (error: any) {
-      console.error('Error uploading video:', error);
-      addDebug(`Video upload failed: ${error.message}`);
-      
-      // Try again with different content-type header if it's a content-type issue
-      if (error.message?.includes('content-type') || error.message?.includes('Content-Type')) {
-        try {
-          addDebug('Trying upload with explicit content-type...');
-          const { data, error: retryError } = await supabase.storage
-            .from('ad_images')
-            .upload(filePath, file, {
-              cacheControl: '3600',
-              upsert: true, // Changed from false to true
-              contentType: file.type
-            });
-            
-          if (retryError) throw retryError;
-          
-          // Get public URL from image bucket
-          const { data: { publicUrl } } = supabase.storage
-            .from('ad_images')
-            .getPublicUrl(filePath);
-            
-          addDebug(`Retry succeeded. Generated public URL: ${publicUrl}`);
-          return publicUrl;
-        } catch (retryError: any) {
-          addDebug(`Retry upload failed: ${retryError.message}`);
-        }
-      }
-      
-      toast.error('Failed to upload video');
-      return null;
+      toast.error(`Failed to upload ${isVideo ? 'video' : 'image'}`);
+      return { url: null, isVideo };
     } finally {
       setIsUploading(false);
     }
@@ -420,59 +323,54 @@ const AdBuilder = () => {
       return;
     }
 
-    // For custom mode, either image or video is required
-    if (adMode === 'custom' && !adForm.imagePreview && !adForm.videoPreview) {
+    // For custom mode, media is required
+    if (adMode === 'custom' && !adForm.mediaPreview) {
       toast.error('Please upload an image or video for your custom ad');
       return;
     }
 
     // Check for blob URLs
-    if (isBlobUrl(adForm.imagePreview)) {
-      if (!adForm.imageFile) {
-        toast.error('Please upload the image again. Temporary URLs cannot be stored.');
-        return;
-      }
-    }
-    
-    if (isBlobUrl(adForm.videoPreview)) {
-      if (!adForm.videoFile) {
-        toast.error('Please upload the video again. Temporary URLs cannot be stored.');
+    if (isBlobUrl(adForm.mediaPreview)) {
+      if (!adForm.mediaFile) {
+        toast.error('Please upload the media again. Temporary URLs cannot be stored.');
         return;
       }
     }
 
     setIsSaving(true);
-    addDebug(`Starting save process for ad: ${adForm.name}, mode: ${adMode}, media: ${mediaType}`);
+    addDebug(`Starting save process for ad: ${adForm.name}, mode: ${adMode}`);
 
     try {
-      // Upload image or video if there's a new file
-      let imageUrl = adForm.imagePreview;
-      let videoUrl = adForm.videoPreview;
+      // Upload media if there's a new file
+      let imageUrl = '';
+      let videoUrl = '';
       
       // Don't use blob URLs
-      if (isBlobUrl(imageUrl)) imageUrl = '';
-      if (isBlobUrl(videoUrl)) videoUrl = '';
-      
-      // Clear existing URLs if we're changing from image to video or vice versa
-      if (mediaType === 'image' && adForm.imageFile) {
-        videoUrl = ''; // Clear any existing video URL
-        const uploadedUrl = await uploadImageToStorage(adForm.imageFile);
-        if (uploadedUrl) {
-          imageUrl = uploadedUrl;
-          addDebug(`New image URL: ${imageUrl}`);
+      if (!isBlobUrl(adForm.mediaPreview)) {
+        if (adForm.isVideo) {
+          videoUrl = adForm.mediaPreview;
         } else {
-          addDebug('Image upload failed');
-          throw new Error('Failed to upload image');
+          imageUrl = adForm.mediaPreview;
         }
-      } else if (mediaType === 'video' && adForm.videoFile) {
-        imageUrl = ''; // Clear any existing image URL
-        const uploadedUrl = await uploadVideoToStorage(adForm.videoFile);
-        if (uploadedUrl) {
-          videoUrl = uploadedUrl;
-          addDebug(`New video URL: ${videoUrl}`);
+      }
+      
+      // Upload new media if it exists
+      if (adForm.mediaFile) {
+        const { url, isVideo } = await uploadMediaToStorage(adForm.mediaFile);
+        
+        if (url) {
+          if (isVideo) {
+            videoUrl = url;
+            imageUrl = '';
+            addDebug(`New video URL: ${videoUrl}`);
+          } else {
+            imageUrl = url;
+            videoUrl = '';
+            addDebug(`New image URL: ${imageUrl}`);
+          }
         } else {
-          addDebug('Video upload failed');
-          throw new Error('Failed to upload video');
+          addDebug('Media upload failed');
+          throw new Error('Failed to upload media');
         }
       }
 
@@ -739,13 +637,11 @@ const AdBuilder = () => {
       name: '',
       background: '#FFFFFF',
       redirectUrl: '',
-      imageFile: null,
-      imagePreview: '',
-      videoFile: null,
-      videoPreview: '',
+      mediaFile: null,
+      mediaPreview: '',
+      isVideo: false
     });
     setAdMode('custom');
-    setMediaType('image');
     setSelectedDesign(null);
   };
 
@@ -775,19 +671,11 @@ const AdBuilder = () => {
   };
 
   const clearMedia = () => {
-    if (mediaType === 'image') {
-      setAdForm(prev => ({
-        ...prev,
-        imageFile: null,
-        imagePreview: ''
-      }));
-    } else {
-      setAdForm(prev => ({
-        ...prev,
-        videoFile: null,
-        videoPreview: ''
-      }));
-    }
+    setAdForm(prev => ({
+      ...prev,
+      mediaFile: null,
+      mediaPreview: ''
+    }));
   };
 
   const renderAdList = () => (
@@ -1154,41 +1042,14 @@ const AdBuilder = () => {
                 
                 <div className="space-y-2">
                   <label className="block text-sm font-medium text-gray-700">
-                    Media Type
-                  </label>
-                  <div className="flex space-x-4 mb-4">
-                    <div 
-                      className={`p-3 border rounded-md cursor-pointer flex-1 text-center flex flex-col items-center ${mediaType === 'image' ? 'border-primary-500 bg-primary-50' : 'border-gray-200'}`}
-                      onClick={() => setMediaType('image')}
-                    >
-                      <ImageIcon size={24} className="mb-2" />
-                      <h3 className="font-medium text-sm">Image</h3>
-                    </div>
-                    <div 
-                      className={`p-3 border rounded-md cursor-pointer flex-1 text-center flex flex-col items-center ${mediaType === 'video' ? 'border-primary-500 bg-primary-50' : 'border-gray-200'}`}
-                      onClick={() => setMediaType('video')}
-                    >
-                      <Film size={24} className="mb-2" />
-                      <h3 className="font-medium text-sm">Video</h3>
-                    </div>
-                  </div>
-                </div>
-                
-                <div className="space-y-2">
-                  <label className="block text-sm font-medium text-gray-700">
-                    {mediaType === 'image' ? 'Upload Image' : 'Upload Video'}
+                    Upload Media (Image or Video)
                   </label>
                   <MediaUpload 
                     onUpload={handleMediaUpload}
-                    preview={mediaType === 'image' ? adForm.imagePreview : adForm.videoPreview}
-                    previewType={mediaType}
+                    preview={adForm.mediaPreview}
+                    previewType={adForm.isVideo ? 'video' : 'image'}
                     onClear={clearMedia}
                     className="border border-gray-300 rounded-md"
-                    accept={
-                      mediaType === 'image' 
-                        ? { 'image/*': ['.jpg', '.jpeg', '.png', '.gif'] }
-                        : { 'video/*': ['.mp4', '.mov', '.webm'] }
-                    }
                   />
                 </div>
               </div>
