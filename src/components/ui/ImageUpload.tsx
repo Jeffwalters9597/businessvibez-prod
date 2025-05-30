@@ -25,6 +25,12 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const isMobile = isMobileDevice();
 
+  // Function to check if a URL is a blob URL
+  const isBlobUrl = (url: string | null | undefined): boolean => {
+    if (!url) return false;
+    return url.startsWith('blob:');
+  };
+
   const onDrop = useCallback((acceptedFiles: File[]) => {
     if (acceptedFiles.length > 0) {
       setError(null);
@@ -112,7 +118,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
             <div className="w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
             <p className="text-sm text-gray-600">Processing image...</p>
           </div>
-        ) : preview ? (
+        ) : preview && !isBlobUrl(preview) ? (
           <div className="relative aspect-video">
             <img
               src={preview}
@@ -159,6 +165,14 @@ const ImageUpload: React.FC<ImageUploadProps> = ({
           </div>
         )}
       </div>
+      
+      {/* Display warning if preview is a blob URL */}
+      {preview && isBlobUrl(preview) && (
+        <div className="mt-2 text-sm text-warning-600 flex items-center">
+          <AlertCircle size={16} className="mr-1 flex-shrink-0" />
+          <span>This is a temporary URL that won't be saved. Please upload the file again.</span>
+        </div>
+      )}
       
       {error && (
         <div className="mt-2 text-sm text-error-600 flex items-center">

@@ -245,7 +245,7 @@ const AdBuilder = () => {
         .from('ad_images')
         .upload(filePath, fileToUpload, {
           cacheControl: '3600',
-          upsert: false
+          upsert: true // Changed from false to true to ensure upload works
         });
       
       if (error) {
@@ -288,7 +288,8 @@ const AdBuilder = () => {
         .from('ad_images')
         .upload(filePath, file, {
           cacheControl: '3600',
-          upsert: false
+          upsert: true, // Changed from false to true to ensure upload works
+          contentType: file.type // Explicitly set content type
         });
       
       if (error) {
@@ -317,7 +318,7 @@ const AdBuilder = () => {
             .from('ad_images')
             .upload(filePath, file, {
               cacheControl: '3600',
-              upsert: false,
+              upsert: true, // Changed from false to true
               contentType: file.type
             });
             
@@ -449,12 +450,12 @@ const AdBuilder = () => {
       let videoUrl = adForm.videoPreview;
       
       // Don't use blob URLs
-      if (isBlobUrl(imageUrl)) imageUrl = null;
-      if (isBlobUrl(videoUrl)) videoUrl = null;
+      if (isBlobUrl(imageUrl)) imageUrl = '';
+      if (isBlobUrl(videoUrl)) videoUrl = '';
       
       // Clear existing URLs if we're changing from image to video or vice versa
       if (mediaType === 'image' && adForm.imageFile) {
-        videoUrl = null; // Clear any existing video URL
+        videoUrl = ''; // Clear any existing video URL
         const uploadedUrl = await uploadImageToStorage(adForm.imageFile);
         if (uploadedUrl) {
           imageUrl = uploadedUrl;
@@ -464,7 +465,7 @@ const AdBuilder = () => {
           throw new Error('Failed to upload image');
         }
       } else if (mediaType === 'video' && adForm.videoFile) {
-        imageUrl = null; // Clear any existing image URL
+        imageUrl = ''; // Clear any existing image URL
         const uploadedUrl = await uploadVideoToStorage(adForm.videoFile);
         if (uploadedUrl) {
           videoUrl = uploadedUrl;
@@ -478,12 +479,12 @@ const AdBuilder = () => {
       // Make sure we're not using blob URLs
       if (imageUrl && isBlobUrl(imageUrl)) {
         addDebug('Detected blob URL for image, clearing it');
-        imageUrl = null;
+        imageUrl = '';
       }
       
       if (videoUrl && isBlobUrl(videoUrl)) {
         addDebug('Detected blob URL for video, clearing it');
-        videoUrl = null;
+        videoUrl = '';
       }
 
       // Check if we're editing or creating new
