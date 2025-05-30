@@ -24,7 +24,21 @@ const DashboardLayout = () => {
   
   const handleSignOut = async () => {
     try {
-      await supabase.auth.signOut();
+      const { error } = await supabase.auth.signOut();
+      
+      // If there's an error but it's just the session not found error,
+      // we can still proceed with client-side logout
+      if (error && (
+        error.message.includes("session_not_found") || 
+        error.message.includes("Session from session_id claim in JWT does not exist")
+      )) {
+        console.log('Session already expired or not found, proceeding with client-side logout');
+      } else if (error) {
+        // For any other errors, throw to be caught by catch block
+        throw error;
+      }
+      
+      // Always clear local user state and redirect
       setUser(null);
       navigate('/login');
       toast.success('Successfully signed out');
