@@ -93,7 +93,7 @@ self.addEventListener('fetch', (event) => {
       method: event.request.method,
       headers: new Headers(event.request.headers),
       mode: 'cors',
-      credentials: 'same-origin',
+      credentials: 'omit',
       redirect: 'follow'
     });
     
