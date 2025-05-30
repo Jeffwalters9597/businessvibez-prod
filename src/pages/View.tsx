@@ -23,6 +23,7 @@ interface AdSpace {
 interface AdDesign {
   id: string;
   image_url?: string;
+  video_url?: string;
   content: {
     redirectUrl?: string;
   };
@@ -45,11 +46,14 @@ const View = () => {
   const [redirectClicked, setRedirectClicked] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageError, setImageError] = useState(false);
+  const [videoLoaded, setVideoLoaded] = useState(false);
+  const [videoError, setVideoError] = useState(false);
   const [debug, setDebug] = useState<string[]>([]);
   const [deviceInfo, setDeviceInfo] = useState<string>('');
   const [isMobile, setIsMobile] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
   const imageRef = useRef<HTMLImageElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   const addDebug = (message: string) => {
     console.log(message);
@@ -254,7 +258,7 @@ const View = () => {
                   const adDesignData = await getAdDesignByAdSpaceId(adSpaceId);
                   
                   if (adDesignData) {
-                    addDebug(`Ad design found with image: ${adDesignData.image_url ? 'yes' : 'no'}`);
+                    addDebug(`Ad design found with image: ${adDesignData.image_url ? 'yes' : 'no'}, video: ${adDesignData.video_url ? 'yes' : 'no'}`);
                     setAdDesign(adDesignData);
                     
                     // If this is a redirect ad design, use its redirect URL
@@ -263,11 +267,16 @@ const View = () => {
                       addDebug(`Using redirect URL from ad design: ${finalRedirectUrl}`);
                     }
 
-                    // Preload the image if available
+                    // Preload the media if available
                     if (adDesignData.image_url) {
                       addDebug(`Pre-fetching image: ${adDesignData.image_url}`);
                       const imgCache = new Image();
                       imgCache.src = adDesignData.image_url;
+                    }
+
+                    if (adDesignData.video_url) {
+                      addDebug(`Video URL found: ${adDesignData.video_url}`);
+                      // We don't preload video to avoid bandwidth issues
                     }
                   } else {
                     addDebug("No ad design found for this ad space through any method");
@@ -398,6 +407,15 @@ const View = () => {
     }
   }, [adDesign?.image_url, isMobile]);
 
+  // Handle video media
+  useEffect(() => {
+    if (adDesign?.video_url) {
+      addDebug(`Video URL detected: ${adDesign.video_url}`);
+      // We don't preload video to save bandwidth, but we do update state
+      setVideoLoaded(false); // Will be set to true on load event
+    }
+  }, [adDesign?.video_url]);
+
   // Manual redirect handler
   const handleRedirect = () => {
     if (!redirectUrl) return;
@@ -431,6 +449,17 @@ const View = () => {
     setImageLoaded(true);
   };
 
+  // Video handlers
+  const handleVideoError = () => {
+    addDebug("Video error triggered by video onError event");
+    setVideoError(true);
+  };
+
+  const handleVideoLoad = () => {
+    addDebug("Video loaded metadata event");
+    setVideoLoaded(true);
+  };
+
   // Try a different approach to load images on mobile
   const forceReloadImage = () => {
     if (!adDesign?.image_url || !imageRef.current) return;
@@ -442,6 +471,20 @@ const View = () => {
       addDebug("Forcing image reload with cache-busting");
     } catch (err) {
       addDebug(`Force reload failed: ${err}`);
+    }
+  };
+
+  // Try a different approach to load videos on mobile
+  const forceReloadVideo = () => {
+    if (!adDesign?.video_url || !videoRef.current) return;
+    
+    try {
+      // Add a cache-busting parameter
+      const cacheBuster = `?t=${Date.now()}`;
+      videoRef.current.src = adDesign.video_url + cacheBuster;
+      addDebug("Forcing video reload with cache-busting");
+    } catch (err) {
+      addDebug(`Force video reload failed: ${err}`);
     }
   };
 
@@ -489,7 +532,69 @@ const View = () => {
     );
   }
 
-  // Mobile-optimized custom ad with image display
+  // Video ad display
+  if (adDesign?.video_url && !redirectUrl) {
+    return (
+      <div 
+        className="min-h-screen flex flex-col items-center justify-center p-0 m-0 overflow-hidden"
+        style={{ 
+          backgroundColor: adData?.theme?.backgroundColor || '#f9fafb'
+        }}
+      >
+        {!videoLoaded && !videoError && (
+          <div className="flex flex-col items-center justify-center">
+            <div className="w-16 h-16 border-4 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+            <p className="mt-4 text-gray-600">Loading video...</p>
+          </div>
+        )}
+        
+        <div className="w-full h-full flex items-center justify-center">
+          {videoError ? (
+            // Fallback when video fails to load
+            <div className="flex flex-col items-center justify-center">
+              <svg width="120" height="120" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-gray-400">
+                <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
+                <circle cx="12" cy="12" r="3"/>
+                <line x1="2" y1="2" x2="22" y2="22"/>
+              </svg>
+              <p className="text-gray-600 mt-4">Video could not be loaded</p>
+              {isMobile && (
+                <button 
+                  onClick={forceReloadVideo}
+                  className="mt-4 px-4 py-2 bg-primary-500 text-white rounded-md"
+                >
+                  Try Again
+                </button>
+              )}
+            </div>
+          ) : (
+            <video 
+              ref={videoRef}
+              src={adDesign.video_url}
+              className="w-full max-w-4xl h-auto max-h-screen object-contain"
+              controls
+              autoPlay
+              playsInline
+              onLoadedMetadata={handleVideoLoad}
+              onError={handleVideoError}
+              crossOrigin="anonymous"
+            />
+          )}
+        </div>
+
+        {adData?.title && (
+          <div className="fixed bottom-0 left-0 right-0 bg-black bg-opacity-50 text-white p-4 text-center">
+            <h1 className="text-xl font-bold">{adData.title}</h1>
+            {adData.description && <p className="text-sm mt-1">{adData.description}</p>}
+          </div>
+        )}
+        
+        {showDebugInfo && <DebugPanel messages={debug} />}
+      </div>
+    );
+  }
+
+  // Image ad display
   if (adDesign?.image_url && !redirectUrl) {
     return (
       <div 
@@ -593,14 +698,15 @@ const View = () => {
             )}
           </div>
         )}
-        {(!redirectUrl && (!adDesign?.image_url || imageError)) && (
+        {(!redirectUrl && !adDesign?.image_url && !adDesign?.video_url) || 
+         (imageError && videoError) && (
           <div>
             <p className="text-lg font-medium p-4 bg-error-100 text-error-700 rounded-lg">
               This ad doesn't have any content to display
             </p>
-            {imageError && adDesign?.image_url && (
+            {(imageError || videoError) && (
               <p className="mt-4 text-sm text-gray-600">
-                There was an error loading the image for this ad.
+                There was an error loading the media for this ad.
               </p>
             )}
             {isMobile && retryCount > 0 && (

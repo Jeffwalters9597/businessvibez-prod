@@ -6,6 +6,7 @@ import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import QrCode from '../../components/ui/QrCode';
 import ImageUpload from '../../components/ui/ImageUpload';
+import MediaUpload from '../../components/ui/MediaUpload';
 import { 
   Plus, 
   Trash2, 
@@ -14,7 +15,9 @@ import {
   Link,
   QrCode as QrIcon,
   Edit,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Film,
+  AlertTriangle
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -30,6 +33,7 @@ interface AdDesign {
     redirectUrl?: string;
   };
   image_url?: string;
+  video_url?: string;
   ad_space_id?: string;
   ad_spaces?: {
     id: string;
@@ -50,18 +54,21 @@ const AdBuilder = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [savedDesigns, setSavedDesigns] = useState<AdDesign[]>([]);
   const previewRef = useRef<HTMLDivElement>(null);
-  const [adMode, setAdMode] = useState<'custom' | 'redirect'>('custom');
+  const [adMode, setAdMode] = useState<'custom' | 'redirect' | 'video'>('custom');
   const [adForm, setAdForm] = useState({
     name: '',
     background: '#FFFFFF',
     redirectUrl: '',
     imageFile: null as File | null,
     imagePreview: '',
+    videoFile: null as File | null,
+    videoPreview: '',
   });
   const [isUploading, setIsUploading] = useState(false);
   const [debugInfo, setDebugInfo] = useState<string[]>([]);
   // Track available storage buckets
   const [storageBuckets, setStorageBuckets] = useState<string[]>([]);
+  const [storageConfigured, setStorageConfigured] = useState<boolean>(false);
 
   useEffect(() => {
     fetchDesigns();
@@ -71,16 +78,25 @@ const AdBuilder = () => {
   useEffect(() => {
     // Pre-fill form when editing
     if (viewMode === 'edit' && selectedDesign) {
-      const isRedirectMode = !selectedDesign.content.headline && 
-        (selectedDesign.content.redirectUrl || selectedDesign.ad_spaces?.content?.url);
+      // Determine mode based on content
+      let mode: 'custom' | 'redirect' | 'video' = 'custom';
       
-      setAdMode(isRedirectMode ? 'redirect' : 'custom');
+      if (selectedDesign.video_url) {
+        mode = 'video';
+      } else if (!selectedDesign.content.headline && 
+        (selectedDesign.content.redirectUrl || selectedDesign.ad_spaces?.content?.url)) {
+        mode = 'redirect';
+      }
+      
+      setAdMode(mode);
       setAdForm({
         name: selectedDesign.name || '',
         background: selectedDesign.background || '#FFFFFF',
         redirectUrl: selectedDesign.content.redirectUrl || selectedDesign.ad_spaces?.content?.url || '',
         imageFile: null,
         imagePreview: selectedDesign.image_url || '',
+        videoFile: null,
+        videoPreview: selectedDesign.video_url || '',
       });
     }
   }, [viewMode, selectedDesign]);
@@ -97,19 +113,27 @@ const AdBuilder = () => {
       
       if (error) {
         addDebug(`Error listing buckets: ${error.message}`);
+        setStorageConfigured(false);
         return;
       }
       
-      const bucketNames = buckets.map(b => b.name);
+      const bucketNames = buckets?.map(b => b.name) || [];
       setStorageBuckets(bucketNames);
       addDebug(`Available storage buckets: ${bucketNames.join(', ') || 'none'}`);
       
-      // If public bucket doesn't exist, show a warning to the user
-      if (!bucketNames.includes('public') && !bucketNames.includes('ad_images')) {
-        toast.error('Storage not properly configured. Some features may not work.', { duration: 5000 });
+      // Check if required buckets exist
+      const hasRequiredBucket = bucketNames.includes('public') || 
+                               bucketNames.includes('ad_images') || 
+                               bucketNames.includes('ad_videos');
+      setStorageConfigured(hasRequiredBucket);
+      
+      // If no buckets exist, show a warning to the user
+      if (!hasRequiredBucket) {
+        toast.error('Storage not properly configured. Media uploads will not work.', { duration: 5000 });
       }
     } catch (error: any) {
       addDebug(`Error checking buckets: ${error.message}`);
+      setStorageConfigured(false);
     }
   };
 
@@ -145,6 +169,13 @@ const AdBuilder = () => {
   const handleImageUpload = async (file: File) => {
     if (!file) return;
     
+    // Immediately check if storage is configured
+    if (!storageConfigured) {
+      toast.error('Storage is not configured. Please set up Supabase storage buckets first.');
+      addDebug('Image upload rejected - storage not configured');
+      return;
+    }
+    
     // Check file size (max 5MB)
     if (file.size > 5 * 1024 * 1024) {
       toast.error('Image too large. Maximum size is 5MB.');
@@ -171,6 +202,32 @@ const AdBuilder = () => {
     addDebug(`Image selected: ${file.name} (${Math.round(file.size / 1024)} KB)`);
   };
 
+  const handleVideoUpload = async (file: File) => {
+    if (!file) return;
+    
+    // Immediately check if storage is configured
+    if (!storageConfigured) {
+      toast.error('Storage is not configured. Please set up Supabase storage buckets first.');
+      addDebug('Video upload rejected - storage not configured');
+      return;
+    }
+    
+    // Check file size (max 50MB)
+    if (file.size > 50 * 1024 * 1024) {
+      toast.error('Video too large. Maximum size is 50MB.');
+      return;
+    }
+    
+    // Create object URL for preview
+    const previewUrl = URL.createObjectURL(file);
+    setAdForm(prev => ({
+      ...prev,
+      videoFile: file,
+      videoPreview: previewUrl
+    }));
+    addDebug(`Video selected: ${file.name} (${Math.round(file.size / 1024 / 1024)} MB)`);
+  };
+
   // Helper function to get image dimensions
   const getImageDimensions = (file: File): Promise<{width: number, height: number}> => {
     return new Promise((resolve, reject) => {
@@ -189,6 +246,13 @@ const AdBuilder = () => {
 
   const uploadImageToStorage = async (file: File): Promise<string | null> => {
     if (!file || !user) return null;
+    
+    // Early check if storage is configured
+    if (!storageConfigured) {
+      addDebug('Skipping upload - storage not configured');
+      toast.error('Storage buckets not configured in Supabase. Please create a bucket named "ad_images" or "public".');
+      return null;
+    }
     
     const fileExt = file.name.split('.').pop();
     const fileName = `${user.id}-${Date.now()}.${fileExt}`;
@@ -312,6 +376,127 @@ const AdBuilder = () => {
     }
   };
 
+  const uploadVideoToStorage = async (file: File): Promise<string | null> => {
+    if (!file || !user) return null;
+    
+    // Early check if storage is configured
+    if (!storageConfigured) {
+      addDebug('Skipping upload - storage not configured');
+      toast.error('Storage buckets not configured in Supabase. Please create a bucket named "ad_videos" or "public".');
+      return null;
+    }
+    
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${user.id}-${Date.now()}.${fileExt}`;
+    const filePath = `${fileName}`;
+    
+    try {
+      setIsUploading(true);
+      addDebug(`Uploading video to Supabase storage: ${fileName}`);
+      
+      // Get list of available buckets
+      const { data: buckets, error: bucketError } = await supabase.storage.listBuckets();
+      
+      if (bucketError) {
+        addDebug(`Error listing buckets: ${bucketError.message}`);
+        throw new Error(`Unable to access storage: ${bucketError.message}`);
+      }
+      
+      const bucketNames = buckets.map(b => b.name);
+      addDebug(`Available storage buckets: ${bucketNames.join(', ')}`);
+      
+      // Try different buckets in order of preference
+      let uploadResult;
+      let uploadError;
+      
+      // First try 'ad_videos' bucket if it exists (preferred)
+      if (bucketNames.includes('ad_videos')) {
+        addDebug('Attempting upload to "ad_videos" bucket');
+        uploadResult = await supabase.storage
+          .from('ad_videos')
+          .upload(filePath, file);
+          
+        uploadError = uploadResult.error;
+        
+        if (!uploadError) {
+          addDebug('Upload to "ad_videos" bucket successful');
+          const { data: { publicUrl } } = supabase.storage
+            .from('ad_videos')
+            .getPublicUrl(filePath);
+          
+          addDebug(`Generated public URL: ${publicUrl}`);
+          return publicUrl;
+        } else {
+          addDebug(`Upload to "ad_videos" bucket failed: ${uploadError.message}`);
+        }
+      }
+      
+      // Next try 'public' bucket if it exists
+      if (bucketNames.includes('public')) {
+        addDebug('Attempting upload to "public" bucket');
+        uploadResult = await supabase.storage
+          .from('public')
+          .upload(`videos/${filePath}`, file);
+          
+        uploadError = uploadResult.error;
+        
+        if (!uploadError) {
+          addDebug('Upload to "public" bucket successful');
+          const { data: { publicUrl } } = supabase.storage
+            .from('public')
+            .getPublicUrl(`videos/${filePath}`);
+          
+          addDebug(`Generated public URL: ${publicUrl}`);
+          return publicUrl;
+        } else {
+          addDebug(`Upload to "public" bucket failed: ${uploadError.message}`);
+        }
+      }
+      
+      // Try any other available bucket as a last resort
+      if (bucketNames.length > 0 && !bucketNames.includes('public') && !bucketNames.includes('ad_videos')) {
+        const bucketToUse = bucketNames[0]; // Use the first available bucket
+        addDebug(`Attempting upload to "${bucketToUse}" bucket as fallback`);
+        
+        uploadResult = await supabase.storage
+          .from(bucketToUse)
+          .upload(`videos/${filePath}`, file);
+          
+        uploadError = uploadResult.error;
+        
+        if (!uploadError) {
+          addDebug(`Upload to "${bucketToUse}" bucket successful`);
+          const { data: { publicUrl } } = supabase.storage
+            .from(bucketToUse)
+            .getPublicUrl(`videos/${filePath}`);
+          
+          addDebug(`Generated public URL: ${publicUrl}`);
+          return publicUrl;
+        } else {
+          addDebug(`Upload to "${bucketToUse}" bucket failed: ${uploadError.message}`);
+        }
+      }
+      
+      // If we've tried all options and still failed
+      if (!bucketNames.length) {
+        addDebug('No storage buckets found in the project');
+        toast.error('Storage is not configured in your Supabase project. Please create a bucket named "ad_videos" or "public".');
+      } else {
+        addDebug('All upload attempts failed');
+        toast.error('Failed to upload video to any available storage bucket');
+      }
+      
+      throw new Error('No available storage buckets found or all upload attempts failed');
+    } catch (error: any) {
+      console.error('Error uploading video:', error);
+      addDebug(`Upload failed: ${error.message}`);
+      toast.error('Failed to upload video: ' + error.message);
+      return null;
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   // Helper function to compress images
   const compressImage = (file: File): Promise<File> => {
     return new Promise((resolve, reject) => {
@@ -383,33 +568,65 @@ const AdBuilder = () => {
       return;
     }
 
-    // Only validate redirect URL for redirect mode
+    // Validate fields based on mode
     if (adMode === 'redirect' && !adForm.redirectUrl) {
       toast.error('Please provide a redirect URL');
       return;
     }
 
-    // For custom mode, an image is required
+    // For custom mode, an image is required if storage is configured
     if (adMode === 'custom' && !adForm.imagePreview) {
-      toast.error('Please upload an image for your custom ad');
-      return;
+      if (storageConfigured) {
+        toast.error('Please upload an image for your custom ad');
+        return;
+      } else {
+        // If storage isn't configured, warn but allow to continue
+        toast.warning('No image available because storage is not configured. Your ad will be created without an image.');
+      }
+    }
+
+    // For video mode, a video is required if storage is configured
+    if (adMode === 'video' && !adForm.videoPreview) {
+      if (storageConfigured) {
+        toast.error('Please upload a video for your video ad');
+        return;
+      } else {
+        // If storage isn't configured, warn but allow to continue
+        toast.warning('No video available because storage is not configured. Your ad will be created without a video.');
+      }
     }
 
     setIsSaving(true);
     addDebug(`Starting save process for ad: ${adForm.name}, mode: ${adMode}`);
 
     try {
-      // Upload image if there's a new file
+      // Upload media if there are new files and storage is configured
       let imageUrl = adForm.imagePreview;
-      if (adForm.imageFile) {
+      let videoUrl = adForm.videoPreview;
+      
+      // Upload image if needed (for custom mode)
+      if (adMode === 'custom' && adForm.imageFile && storageConfigured) {
         addDebug('Uploading new image file');
         const uploadedUrl = await uploadImageToStorage(adForm.imageFile);
         if (uploadedUrl) {
           imageUrl = uploadedUrl;
           addDebug(`New image URL: ${imageUrl}`);
         } else {
-          addDebug('Image upload failed');
-          throw new Error('Failed to upload image');
+          addDebug('Image upload failed - continuing with ad creation without the new image');
+          toast.warning('Image upload failed. Your ad will be saved without the new image.', { duration: 5000 });
+        }
+      }
+      
+      // Upload video if needed (for video mode)
+      if (adMode === 'video' && adForm.videoFile && storageConfigured) {
+        addDebug('Uploading new video file');
+        const uploadedUrl = await uploadVideoToStorage(adForm.videoFile);
+        if (uploadedUrl) {
+          videoUrl = uploadedUrl;
+          addDebug(`New video URL: ${videoUrl}`);
+        } else {
+          addDebug('Video upload failed - continuing with ad creation without the new video');
+          toast.warning('Video upload failed. Your ad will be saved without the new video.', { duration: 5000 });
         }
       }
 
@@ -423,11 +640,11 @@ const AdBuilder = () => {
         user_id: user?.id,
         title: adForm.name,
         description: `Ad space for ${adForm.name}`,
-        content: adMode === 'custom' 
-          ? {}
-          : {
+        content: adMode === 'redirect' 
+          ? {
               url: adForm.redirectUrl
-            },
+            }
+          : {},
         theme: {
           backgroundColor: adForm.background,
           textColor: '#FFFFFF'
@@ -475,19 +692,31 @@ const AdBuilder = () => {
       // STEP 2: Create or update the ad design
       addDebug(`STEP 2: ${isEditing ? 'Updating' : 'Creating'} ad design with ad_space_id: ${adSpaceId}`);
       
-      // CRITICAL: Explicitly include image_url and ad_space_id in the record
+      // Build the ad design data based on mode
       const adDesignData = {
         user_id: user?.id,
         name: adForm.name,
         background: adForm.background,
-        content: adMode === 'custom'
-          ? {}
-          : {
+        content: adMode === 'redirect'
+          ? {
               redirectUrl: adForm.redirectUrl
-            },
-        ad_space_id: adSpaceId,
-        image_url: imageUrl
+            }
+          : {},
+        ad_space_id: adSpaceId
       };
+      
+      // Add media URLs based on mode
+      if (adMode === 'custom') {
+        adDesignData['image_url'] = imageUrl;
+        adDesignData['video_url'] = null;
+      } else if (adMode === 'video') {
+        adDesignData['video_url'] = videoUrl;
+        adDesignData['image_url'] = null; // Optional - can keep or remove any existing image
+      } else {
+        // For redirect mode, we don't need media
+        adDesignData['image_url'] = null;
+        adDesignData['video_url'] = null;
+      }
       
       addDebug(`Ad design data being saved: ${JSON.stringify({
         ...adDesignData,
@@ -524,10 +753,12 @@ const AdBuilder = () => {
         } else {
           addDebug(`Ad design updated successfully with ID: ${adDesign.id}`);
           addDebug(`Updated ad design has image_url: ${adDesign.image_url ? 'yes' : 'no'}`);
+          addDebug(`Updated ad design has video_url: ${adDesign.video_url ? 'yes' : 'no'}`);
           addDebug(`Updated ad design has ad_space_id: ${adDesign.ad_space_id ? adDesign.ad_space_id : 'no'}`);
           
           console.log('AD_BUILDER_SUPABASE_SUCCESS [ad_designs update]: Updated ad_design data:', JSON.stringify(adDesign, null, 2));
-          console.log('AD_BUILDER_VERIFY_LINK: ad_design.id =', adDesign.id, '; ad_design.ad_space_id =', adDesign.ad_space_id, '; ad_design.image_url =', adDesign.image_url);
+          console.log('AD_BUILDER_VERIFY_LINK: ad_design.id =', adDesign.id, '; ad_design.ad_space_id =', adDesign.ad_space_id, 
+                     '; ad_design.image_url =', adDesign.image_url, '; ad_design.video_url =', adDesign.video_url);
           
           // Update the design in the local state
           setSavedDesigns(prev => 
@@ -567,11 +798,13 @@ const AdBuilder = () => {
         } else {
           addDebug(`New ad design created with ID: ${adDesign.id}`);
           addDebug(`New ad design has image_url: ${adDesign.image_url ? 'yes' : 'no'}`);
+          addDebug(`New ad design has video_url: ${adDesign.video_url ? 'yes' : 'no'}`);
           addDebug(`New ad design has ad_space_id: ${adDesign.ad_space_id ? adDesign.ad_space_id : 'no'}`);
           
           // Log the successful save with detailed information
           console.log('AD_BUILDER_SUPABASE_SUCCESS [ad_designs insert]: Saved ad_design data:', JSON.stringify(adDesign, null, 2));
-          console.log('AD_BUILDER_VERIFY_LINK: ad_design.id =', adDesign.id, '; ad_design.ad_space_id =', adDesign.ad_space_id, '; ad_design.image_url =', adDesign.image_url);
+          console.log('AD_BUILDER_VERIFY_LINK: ad_design.id =', adDesign.id, '; ad_design.ad_space_id =', adDesign.ad_space_id, 
+                     '; ad_design.image_url =', adDesign.image_url, '; ad_design.video_url =', adDesign.video_url);
           
           setSavedDesigns(prev => [adDesign, ...prev]);
         }
@@ -603,7 +836,7 @@ const AdBuilder = () => {
       // First try: Direct query with ad_space_id
       const { data, error } = await supabase
         .from('ad_designs')
-        .select('id, image_url, ad_space_id, user_id')
+        .select('id, image_url, video_url, ad_space_id, user_id')
         .eq('ad_space_id', adSpaceId)
         .maybeSingle();
       
@@ -611,7 +844,7 @@ const AdBuilder = () => {
         addDebug(`Verification query error: ${error.message}`);
       } else if (data) {
         addDebug(`Verification successful: Found ad design ID ${data.id}`);
-        addDebug(`Verification details: image_url=${data.image_url ? 'present' : 'missing'}, ad_space_id=${data.ad_space_id}`);
+        addDebug(`Verification details: image_url=${data.image_url ? 'present' : 'missing'}, video_url=${data.video_url ? 'present' : 'missing'}, ad_space_id=${data.ad_space_id}`);
         return;
       } else {
         addDebug('Verification failed: No ad design found with this ad_space_id');
@@ -620,7 +853,7 @@ const AdBuilder = () => {
       // Second try: Get all ad designs for this user
       const { data: userDesigns, error: userError } = await supabase
         .from('ad_designs')
-        .select('id, ad_space_id, image_url, user_id')
+        .select('id, ad_space_id, image_url, video_url, user_id')
         .eq('user_id', user?.id)
         .order('created_at', { ascending: false })
         .limit(10);
@@ -664,6 +897,8 @@ const AdBuilder = () => {
       redirectUrl: '',
       imageFile: null,
       imagePreview: '',
+      videoFile: null,
+      videoPreview: '',
     });
     setAdMode('custom');
     setSelectedDesign(null);
@@ -695,10 +930,24 @@ const AdBuilder = () => {
   };
 
   const clearImage = () => {
+    if (adForm.imageFile) {
+      URL.revokeObjectURL(adForm.imagePreview);
+    }
     setAdForm(prev => ({
       ...prev,
       imageFile: null,
       imagePreview: ''
+    }));
+  };
+
+  const clearVideo = () => {
+    if (adForm.videoFile) {
+      URL.revokeObjectURL(adForm.videoPreview);
+    }
+    setAdForm(prev => ({
+      ...prev,
+      videoFile: null,
+      videoPreview: ''
     }));
   };
 
@@ -758,6 +1007,14 @@ const AdBuilder = () => {
                       crossOrigin="anonymous"
                     />
                   )}
+                  {design.video_url && (
+                    <video
+                      className="absolute inset-0 w-full h-full object-cover"
+                      src={design.video_url}
+                      controls
+                      crossOrigin="anonymous"
+                    />
+                  )}
                   <div className="relative z-10 flex items-center justify-center h-full">
                     {design.content.redirectUrl || design.ad_spaces?.content?.url ? (
                       <div className="text-center">
@@ -766,10 +1023,10 @@ const AdBuilder = () => {
                         </p>
                       </div>
                     ) : (
-                      design.image_url && (
+                      (design.image_url || design.video_url) && (
                         <div className="text-center">
                           <p className="text-sm text-white bg-black bg-opacity-30 p-2 rounded">
-                            Custom Ad
+                            {design.video_url ? 'Video Ad' : 'Custom Ad'}
                           </p>
                         </div>
                       )
@@ -779,6 +1036,10 @@ const AdBuilder = () => {
                 <div className="flex justify-between items-center">
                   <div className="text-sm text-gray-500">
                     Created: {new Date(design.created_at).toLocaleDateString()}
+                  </div>
+                  <div className="flex items-center space-x-1">
+                    {design.image_url && <ImageIcon size={16} className="text-gray-400" />}
+                    {design.video_url && <Film size={16} className="text-gray-400" />}
                   </div>
                 </div>
               </CardContent>
@@ -821,13 +1082,11 @@ const AdBuilder = () => {
         <Card className="mt-6 bg-amber-50 border-amber-200">
           <CardContent className="p-4">
             <div className="flex items-center">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-amber-500 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
+              <AlertTriangle className="h-6 w-6 text-amber-500 mr-2" />
               <div>
                 <h3 className="font-medium text-amber-800">Storage Not Configured</h3>
                 <p className="text-sm text-amber-700 mt-1">
-                  Your Supabase project doesn't have any storage buckets configured. Image uploads will not work.
+                  Your Supabase project doesn't have any storage buckets configured. Media uploads will not work.
                 </p>
                 <p className="text-sm text-amber-700 mt-2">
                   To fix this, go to your Supabase dashboard, navigate to Storage, and create a bucket named "public" or "ad_images" with appropriate permissions.
@@ -859,6 +1118,7 @@ const AdBuilder = () => {
     const qrUrl = generateQrUrl(selectedDesign.ad_spaces.id);
     const redirectUrl = selectedDesign.content.redirectUrl || selectedDesign.ad_spaces.content.url;
     const isRedirectMode = !!redirectUrl;
+    const isVideoMode = !!selectedDesign.video_url;
 
     return (
       <div className="space-y-6">
@@ -887,7 +1147,14 @@ const AdBuilder = () => {
                 className="aspect-video rounded-lg p-8 relative overflow-hidden"
                 style={{ backgroundColor: selectedDesign.background }}
               >
-                {selectedDesign.image_url && (
+                {isVideoMode ? (
+                  <video 
+                    src={selectedDesign.video_url} 
+                    className="absolute inset-0 w-full h-full object-cover"
+                    controls
+                    crossOrigin="anonymous"
+                  />
+                ) : selectedDesign.image_url && (
                   <img 
                     src={selectedDesign.image_url} 
                     alt="" 
@@ -901,6 +1168,12 @@ const AdBuilder = () => {
                     <div className="text-center">
                       <p className="text-white bg-black bg-opacity-30 p-3 rounded">
                         {redirectUrl}
+                      </p>
+                    </div>
+                  ) : isVideoMode ? (
+                    <div className="text-center">
+                      <p className="text-white bg-black bg-opacity-30 p-3 rounded">
+                        Video Ad
                       </p>
                     </div>
                   ) : selectedDesign.image_url ? (
@@ -972,7 +1245,7 @@ const AdBuilder = () => {
                   ) : (
                     <div>
                       <h3 className="text-sm font-medium text-gray-500">Type</h3>
-                      <p>Custom Ad</p>
+                      <p>{isVideoMode ? 'Video Ad' : 'Custom Ad'}</p>
                     </div>
                   )}
                 </div>
@@ -988,6 +1261,12 @@ const AdBuilder = () => {
                   <div>
                     <h3 className="text-sm font-medium text-gray-500">Image URL</h3>
                     <p className="text-xs font-mono break-all">{selectedDesign.image_url}</p>
+                  </div>
+                )}
+                {selectedDesign.video_url && (
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-500">Video URL</h3>
+                    <p className="text-xs font-mono break-all">{selectedDesign.video_url}</p>
                   </div>
                 )}
               </CardContent>
@@ -1027,12 +1306,27 @@ const AdBuilder = () => {
                   className={`p-3 border rounded-md cursor-pointer flex-1 text-center ${adMode === 'custom' ? 'border-primary-500 bg-primary-50' : 'border-gray-200'}`}
                   onClick={() => setAdMode('custom')}
                 >
-                  <h3 className="font-medium text-sm">Custom Ad</h3>
+                  <div className="flex justify-center mb-1">
+                    <ImageIcon size={20} className={adMode === 'custom' ? 'text-primary-500' : 'text-gray-500'} />
+                  </div>
+                  <h3 className="font-medium text-sm">Image Ad</h3>
+                </div>
+                <div 
+                  className={`p-3 border rounded-md cursor-pointer flex-1 text-center ${adMode === 'video' ? 'border-primary-500 bg-primary-50' : 'border-gray-200'}`}
+                  onClick={() => setAdMode('video')}
+                >
+                  <div className="flex justify-center mb-1">
+                    <Film size={20} className={adMode === 'video' ? 'text-primary-500' : 'text-gray-500'} />
+                  </div>
+                  <h3 className="font-medium text-sm">Video Ad</h3>
                 </div>
                 <div 
                   className={`p-3 border rounded-md cursor-pointer flex-1 text-center ${adMode === 'redirect' ? 'border-primary-500 bg-primary-50' : 'border-gray-200'}`}
                   onClick={() => setAdMode('redirect')}
                 >
+                  <div className="flex justify-center mb-1">
+                    <Link size={20} className={adMode === 'redirect' ? 'text-primary-500' : 'text-gray-500'} />
+                  </div>
                   <h3 className="font-medium text-sm">Redirect Only</h3>
                 </div>
               </div>
@@ -1072,6 +1366,42 @@ const AdBuilder = () => {
                   />
                 </div>
               </div>
+            ) : adMode === 'video' ? (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Background Color
+                  </label>
+                  <div className="flex items-center space-x-3">
+                    <input
+                      type="color"
+                      value={adForm.background}
+                      onChange={(e) => setAdForm({ ...adForm, background: e.target.value })}
+                      className="h-8 w-12 cursor-pointer border-0"
+                    />
+                    <input
+                      type="text"
+                      value={adForm.background}
+                      onChange={(e) => setAdForm({ ...adForm, background: e.target.value })}
+                      className="input text-sm"
+                    />
+                  </div>
+                </div>
+                
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Upload Video
+                  </label>
+                  <MediaUpload
+                    onUpload={(file) => handleVideoUpload(file)}
+                    preview={adForm.videoPreview}
+                    previewType="video"
+                    className="border border-gray-300 rounded-md"
+                    accept={{ 'video/*': ['.mp4', '.mov', '.webm'] }}
+                    onClear={clearVideo}
+                  />
+                </div>
+              </div>
             ) : (
               <Input
                 label="Redirect URL"
@@ -1100,16 +1430,14 @@ const AdBuilder = () => {
           <Card className="bg-amber-50 border-amber-200">
             <CardContent className="p-4">
               <div className="flex items-center">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-amber-500 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                </svg>
+                <AlertTriangle className="h-6 w-6 text-amber-500 mr-2" />
                 <div>
                   <h3 className="font-medium text-amber-800">Storage Not Configured</h3>
                   <p className="text-sm text-amber-700 mt-1">
-                    Your Supabase project doesn't have any storage buckets configured. Image uploads will not work.
+                    Your Supabase project doesn't have any storage buckets configured. Media uploads will not work.
                   </p>
                   <p className="text-sm text-amber-700 mt-2">
-                    To fix this, go to your Supabase dashboard, navigate to Storage, and create a bucket named "public" or "ad_images" with appropriate permissions.
+                    To fix this, go to your Supabase dashboard, navigate to Storage, and create buckets named "public", "ad_images" and "ad_videos" with appropriate permissions.
                   </p>
                 </div>
               </div>
