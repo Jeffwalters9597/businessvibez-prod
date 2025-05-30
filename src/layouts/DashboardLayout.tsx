@@ -32,7 +32,8 @@ const DashboardLayout = () => {
         const isSessionError = 
           error.status === 403 || 
           error.message?.includes("session_not_found") || 
-          error.message?.includes("Session from session_id claim in JWT does not exist");
+          error.message?.includes("Session from session_id claim in JWT does not exist") ||
+          error.message?.includes("Auth session missing!");
         
         if (isSessionError) {
           console.log('Session already expired or not found, proceeding with client-side logout');
