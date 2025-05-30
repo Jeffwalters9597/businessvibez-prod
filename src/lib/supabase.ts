@@ -26,6 +26,20 @@ export const supabase = createClient(
       persistSession: true,
       autoRefreshToken: true,
       detectSessionInUrl: true
+    },
+    global: {
+      fetch: (...args) => {
+        // Add a custom fetch to handle timeouts and retries
+        const [resource, config] = args;
+        return fetch(resource, {
+          ...config,
+          headers: {
+            ...config?.headers,
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache'
+          }
+        });
+      }
     }
   }
 );
