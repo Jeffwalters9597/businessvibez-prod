@@ -237,7 +237,10 @@ const AdBuilder = () => {
       // Upload image to Supabase Storage
       const { data, error } = await supabase.storage
         .from('ad_images')
-        .upload(filePath, fileToUpload);
+        .upload(filePath, fileToUpload, {
+          cacheControl: '3600',
+          upsert: false
+        });
       
       if (error) {
         addDebug(`Storage upload error: ${error.message}`);
@@ -274,37 +277,9 @@ const AdBuilder = () => {
       setIsUploading(true);
       addDebug(`Uploading video to Supabase storage: ${fileName} (${Math.round(file.size/1024/1024)}MB)`);
       
-      // Create ad_videos bucket if it doesn't exist
-      try {
-        const { data: bucketData, error: bucketError } = await supabase.storage
-          .getBucket('ad_videos');
-        
-        if (bucketError && bucketError.message.includes('not found')) {
-          // Try to create the bucket
-          try {
-            const { error: createError } = await supabase.storage.createBucket('ad_videos', {
-              public: true
-            });
-            
-            if (createError) {
-              addDebug(`Bucket creation error: ${createError.message}`);
-              // Continue anyway, the bucket might still exist or be created via migrations
-            } else {
-              addDebug('Created ad_videos bucket successfully');
-            }
-          } catch (createBucketError) {
-            addDebug(`Error creating bucket: ${createBucketError}`);
-            // Continue anyway, the bucket might already exist
-          }
-        }
-      } catch (bucketCheckError) {
-        addDebug(`Bucket check error: ${bucketCheckError}`);
-        // Continue anyway, the bucket might already exist
-      }
-      
-      // Upload video to Supabase Storage
+      // Try to upload to ad_images bucket (we'll use the same bucket for simplicity)
       const { data, error } = await supabase.storage
-        .from('ad_videos')
+        .from('ad_images')
         .upload(filePath, file, {
           cacheControl: '3600',
           upsert: false
@@ -319,7 +294,7 @@ const AdBuilder = () => {
       
       // Get public URL
       const { data: { publicUrl } } = supabase.storage
-        .from('ad_videos')
+        .from('ad_images')
         .getPublicUrl(filePath);
       
       addDebug(`Generated video public URL: ${publicUrl}`);
@@ -328,30 +303,34 @@ const AdBuilder = () => {
       console.error('Error uploading video:', error);
       addDebug(`Video upload failed: ${error.message}`);
       
-      // Fallback to image bucket (in case video bucket doesn't exist)
-      try {
-        addDebug('Attempting fallback upload to image bucket...');
-        const { data, error: imageError } = await supabase.storage
-          .from('ad_images')
-          .upload(filePath, file, {
-            cacheControl: '3600',
-            upsert: false
-          });
+      // Try again with different content-type header if it's a content-type issue
+      if (error.message?.includes('content-type') || error.message?.includes('Content-Type')) {
+        try {
+          addDebug('Trying upload with explicit content-type...');
+          const { data, error: retryError } = await supabase.storage
+            .from('ad_images')
+            .upload(filePath, file, {
+              cacheControl: '3600',
+              upsert: false,
+              contentType: file.type
+            });
+            
+          if (retryError) throw retryError;
           
-        if (imageError) throw imageError;
-        
-        // Get public URL from image bucket
-        const { data: { publicUrl } } = supabase.storage
-          .from('ad_images')
-          .getPublicUrl(filePath);
-          
-        addDebug(`Fallback succeeded. Generated public URL: ${publicUrl}`);
-        return publicUrl;
-      } catch (fallbackError: any) {
-        addDebug(`Fallback upload failed: ${fallbackError.message}`);
-        toast.error('Failed to upload video');
-        return null;
+          // Get public URL from image bucket
+          const { data: { publicUrl } } = supabase.storage
+            .from('ad_images')
+            .getPublicUrl(filePath);
+            
+          addDebug(`Retry succeeded. Generated public URL: ${publicUrl}`);
+          return publicUrl;
+        } catch (retryError: any) {
+          addDebug(`Retry upload failed: ${retryError.message}`);
+        }
       }
+      
+      toast.error('Failed to upload video');
+      return null;
     } finally {
       setIsUploading(false);
     }
@@ -422,6 +401,12 @@ const AdBuilder = () => {
     });
   };
 
+  // Function to check if a URL is a blob URL
+  const isBlobUrl = (url: string | null | undefined): boolean => {
+    if (!url) return false;
+    return url.startsWith('blob:');
+  };
+
   const handleSaveAd = async () => {
     if (!adForm.name) {
       toast.error('Please provide a name for your ad');
@@ -440,6 +425,21 @@ const AdBuilder = () => {
       return;
     }
 
+    // Check for blob URLs
+    if (isBlobUrl(adForm.imagePreview)) {
+      if (!adForm.imageFile) {
+        toast.error('Please upload the image again. Temporary URLs cannot be stored.');
+        return;
+      }
+    }
+    
+    if (isBlobUrl(adForm.videoPreview)) {
+      if (!adForm.videoFile) {
+        toast.error('Please upload the video again. Temporary URLs cannot be stored.');
+        return;
+      }
+    }
+
     setIsSaving(true);
     addDebug(`Starting save process for ad: ${adForm.name}, mode: ${adMode}, media: ${mediaType}`);
 
@@ -447,6 +447,10 @@ const AdBuilder = () => {
       // Upload image or video if there's a new file
       let imageUrl = adForm.imagePreview;
       let videoUrl = adForm.videoPreview;
+      
+      // Don't use blob URLs
+      if (isBlobUrl(imageUrl)) imageUrl = null;
+      if (isBlobUrl(videoUrl)) videoUrl = null;
       
       // Clear existing URLs if we're changing from image to video or vice versa
       if (mediaType === 'image' && adForm.imageFile) {
@@ -472,12 +476,12 @@ const AdBuilder = () => {
       }
 
       // Make sure we're not using blob URLs
-      if (imageUrl && imageUrl.startsWith('blob:')) {
+      if (imageUrl && isBlobUrl(imageUrl)) {
         addDebug('Detected blob URL for image, clearing it');
         imageUrl = null;
       }
       
-      if (videoUrl && videoUrl.startsWith('blob:')) {
+      if (videoUrl && isBlobUrl(videoUrl)) {
         addDebug('Detected blob URL for video, clearing it');
         videoUrl = null;
       }
@@ -832,7 +836,7 @@ const AdBuilder = () => {
                   className="aspect-video rounded-md p-4 mb-4 relative overflow-hidden"
                   style={{ backgroundColor: design.background }}
                 >
-                  {design.image_url && (
+                  {design.image_url && !isBlobUrl(design.image_url) && (
                     <img 
                       src={design.image_url} 
                       alt="" 
@@ -841,7 +845,7 @@ const AdBuilder = () => {
                       crossOrigin="anonymous"
                     />
                   )}
-                  {design.video_url && (
+                  {design.video_url && !isBlobUrl(design.video_url) && (
                     <div className="absolute inset-0 flex items-center justify-center">
                       <Film size={48} className="text-white opacity-70" />
                     </div>
@@ -954,7 +958,7 @@ const AdBuilder = () => {
                 className="aspect-video rounded-lg p-8 relative overflow-hidden"
                 style={{ backgroundColor: selectedDesign.background }}
               >
-                {selectedDesign.image_url && (
+                {selectedDesign.image_url && !isBlobUrl(selectedDesign.image_url) && (
                   <img 
                     src={selectedDesign.image_url} 
                     alt="" 
@@ -963,7 +967,7 @@ const AdBuilder = () => {
                     crossOrigin="anonymous"
                   />
                 )}
-                {selectedDesign.video_url && (
+                {selectedDesign.video_url && !isBlobUrl(selectedDesign.video_url) && (
                   <div className="absolute inset-0 flex items-center justify-center">
                     <video 
                       src={selectedDesign.video_url}
@@ -1065,13 +1069,13 @@ const AdBuilder = () => {
                   <h3 className="text-sm font-medium text-gray-500">Ad Design ID</h3>
                   <p className="text-xs font-mono break-all">{selectedDesign.id}</p>
                 </div>
-                {selectedDesign.image_url && (
+                {selectedDesign.image_url && !isBlobUrl(selectedDesign.image_url) && (
                   <div>
                     <h3 className="text-sm font-medium text-gray-500">Image URL</h3>
                     <p className="text-xs font-mono break-all">{selectedDesign.image_url}</p>
                   </div>
                 )}
-                {selectedDesign.video_url && (
+                {selectedDesign.video_url && !isBlobUrl(selectedDesign.video_url) && (
                   <div>
                     <h3 className="text-sm font-medium text-gray-500">Video URL</h3>
                     <p className="text-xs font-mono break-all">{selectedDesign.video_url}</p>

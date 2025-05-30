@@ -3,7 +3,6 @@ import { useDropzone } from 'react-dropzone';
 import { Image as ImageIcon, Upload, AlertCircle, Film, X } from 'lucide-react';
 import { twMerge } from 'tailwind-merge';
 import { isMobileDevice } from '../../mobile-fixes';
-import Button from './Button';
 
 interface MediaUploadProps {
   onUpload: (file: File) => void;
@@ -31,6 +30,12 @@ const MediaUpload: React.FC<MediaUploadProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const isMobile = isMobileDevice();
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  // Function to check if a URL is a blob URL
+  const isBlobUrl = (url: string | null | undefined): boolean => {
+    if (!url) return false;
+    return url.startsWith('blob:');
+  };
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     if (acceptedFiles.length > 0) {
@@ -156,7 +161,7 @@ const MediaUpload: React.FC<MediaUploadProps> = ({
             <div className="w-8 h-8 border-4 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
             <p className="text-sm text-gray-600">Processing media...</p>
           </div>
-        ) : preview ? (
+        ) : preview && !isBlobUrl(preview) ? (
           <div className="relative aspect-video">
             {previewType === 'image' ? (
               <img
@@ -202,7 +207,7 @@ const MediaUpload: React.FC<MediaUploadProps> = ({
               ) : (
                 <>
                   <p className="font-medium">Click to upload or drag and drop</p>
-                  <p>Images (PNG, JPG, GIF) or Videos (MP4, MOV, AVI, FLV, HEVC)</p>
+                  <p>Images (PNG, JPG, GIF) or Videos (MP4, MOV, WEBM)</p>
                   <p className="text-xs mt-1 text-gray-500">
                     Max file size: {maxSize / 1024 / 1024}MB
                   </p>
@@ -217,6 +222,14 @@ const MediaUpload: React.FC<MediaUploadProps> = ({
           </div>
         )}
       </div>
+      
+      {/* Display warning if preview is a blob URL */}
+      {preview && isBlobUrl(preview) && (
+        <div className="mt-2 text-sm text-warning-600 flex items-center">
+          <AlertCircle size={16} className="mr-1 flex-shrink-0" />
+          <span>This is a temporary URL that won't be saved. Please upload the file again.</span>
+        </div>
+      )}
       
       {error && (
         <div className="mt-2 text-sm text-error-600 flex items-center">

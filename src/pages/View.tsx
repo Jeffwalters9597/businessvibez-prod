@@ -35,6 +35,12 @@ const isValidUUID = (uuid: string): boolean => {
   return uuidRegex.test(uuid);
 };
 
+// Function to check if a URL is a blob URL
+const isBlobUrl = (url: string | null | undefined): boolean => {
+  if (!url) return false;
+  return url.startsWith('blob:');
+};
+
 const View = () => {
   const [searchParams] = useSearchParams();
   const [adData, setAdData] = useState<AdSpace | null>(null);
@@ -176,6 +182,18 @@ const View = () => {
                     addDebug(`Mobile query error: ${mobileError.message}`);
                   } else if (mobileAdDesign) {
                     addDebug(`Mobile direct query successful: ${mobileAdDesign.id}`);
+                    
+                    // Check for blob URLs and don't use them
+                    if (isBlobUrl(mobileAdDesign.image_url)) {
+                      addDebug('Found blob URL for image, ignoring it');
+                      mobileAdDesign.image_url = null;
+                    }
+                    
+                    if (isBlobUrl(mobileAdDesign.video_url)) {
+                      addDebug('Found blob URL for video, ignoring it');
+                      mobileAdDesign.video_url = null;
+                    }
+                    
                     setAdDesign(mobileAdDesign);
                     
                     // Pre-fetch image for mobile
@@ -196,6 +214,18 @@ const View = () => {
                     
                     if (adDesignData) {
                       addDebug(`Standard method found design: ${adDesignData.id}`);
+                      
+                      // Check for blob URLs and don't use them
+                      if (isBlobUrl(adDesignData.image_url)) {
+                        addDebug('Found blob URL for image, ignoring it');
+                        adDesignData.image_url = null;
+                      }
+                      
+                      if (isBlobUrl(adDesignData.video_url)) {
+                        addDebug('Found blob URL for video, ignoring it');
+                        adDesignData.video_url = null;
+                      }
+                      
                       setAdDesign(adDesignData);
                       
                       if (adDesignData.image_url) {
@@ -231,15 +261,28 @@ const View = () => {
                         .limit(1);
                       
                       if (userDesigns && userDesigns.length > 0) {
-                        addDebug(`Mobile last resort found design: ${userDesigns[0].id}`);
-                        setAdDesign(userDesigns[0]);
+                        const firstDesign = {...userDesigns[0]};
+                        
+                        // Check for blob URLs and don't use them
+                        if (isBlobUrl(firstDesign.image_url)) {
+                          addDebug('Found blob URL for image in fallback design, ignoring it');
+                          firstDesign.image_url = null;
+                        }
+                        
+                        if (isBlobUrl(firstDesign.video_url)) {
+                          addDebug('Found blob URL for video in fallback design, ignoring it');
+                          firstDesign.video_url = null;
+                        }
+                        
+                        addDebug(`Mobile last resort found design: ${firstDesign.id}`);
+                        setAdDesign(firstDesign);
                         
                         // Try to update the relationship for future requests
                         try {
                           await supabase
                             .from('ad_designs')
                             .update({ ad_space_id: adSpaceId })
-                            .eq('id', userDesigns[0].id);
+                            .eq('id', firstDesign.id);
                           
                           addDebug("Updated ad_space_id for future requests");
                         } catch (updateError) {
@@ -259,6 +302,18 @@ const View = () => {
                   
                   if (adDesignData) {
                     addDebug(`Ad design found with image: ${adDesignData.image_url ? 'yes' : 'no'}, video: ${adDesignData.video_url ? 'yes' : 'no'}`);
+                    
+                    // Check for blob URLs and don't use them
+                    if (isBlobUrl(adDesignData.image_url)) {
+                      addDebug('Found blob URL for image, ignoring it');
+                      adDesignData.image_url = null;
+                    }
+                    
+                    if (isBlobUrl(adDesignData.video_url)) {
+                      addDebug('Found blob URL for video, ignoring it');
+                      adDesignData.video_url = null;
+                    }
+                    
                     setAdDesign(adDesignData);
                     
                     // If this is a redirect ad design, use its redirect URL
@@ -377,7 +432,7 @@ const View = () => {
 
   // Pre-load image with better error handling specifically for mobile
   useEffect(() => {
-    if (adDesign?.image_url) {
+    if (adDesign?.image_url && !isBlobUrl(adDesign.image_url)) {
       addDebug(`Preloading image: ${adDesign.image_url}`);
       
       // For mobile, we'll use our special mobile preloader
@@ -402,17 +457,23 @@ const View = () => {
         };
         img.src = adDesign.image_url;
       }
+    } else if (adDesign?.image_url && isBlobUrl(adDesign.image_url)) {
+      addDebug("Ignoring blob URL for image");
+      setImageError(true);
     } else {
-      addDebug("No image URL to preload");
+      addDebug("No valid image URL to preload");
     }
   }, [adDesign?.image_url, isMobile]);
 
   // Handle video media
   useEffect(() => {
-    if (adDesign?.video_url) {
+    if (adDesign?.video_url && !isBlobUrl(adDesign.video_url)) {
       addDebug(`Video URL detected: ${adDesign.video_url}`);
       // We don't preload video to save bandwidth, but we do update state
       setVideoLoaded(false); // Will be set to true on load event
+    } else if (adDesign?.video_url && isBlobUrl(adDesign.video_url)) {
+      addDebug("Ignoring blob URL for video");
+      setVideoError(true);
     }
   }, [adDesign?.video_url]);
 
@@ -462,7 +523,7 @@ const View = () => {
 
   // Try a different approach to load images on mobile
   const forceReloadImage = () => {
-    if (!adDesign?.image_url || !imageRef.current) return;
+    if (!adDesign?.image_url || !imageRef.current || isBlobUrl(adDesign.image_url)) return;
     
     try {
       // Add a cache-busting parameter
@@ -476,7 +537,7 @@ const View = () => {
 
   // Try a different approach to load videos on mobile
   const forceReloadVideo = () => {
-    if (!adDesign?.video_url || !videoRef.current) return;
+    if (!adDesign?.video_url || !videoRef.current || isBlobUrl(adDesign.video_url)) return;
     
     try {
       // Add a cache-busting parameter
@@ -533,7 +594,7 @@ const View = () => {
   }
 
   // Video ad display
-  if (adDesign?.video_url && !redirectUrl) {
+  if (adDesign?.video_url && !isBlobUrl(adDesign.video_url) && !redirectUrl) {
     return (
       <div 
         className="min-h-screen flex flex-col items-center justify-center p-0 m-0 overflow-hidden"
@@ -552,10 +613,10 @@ const View = () => {
           {videoError ? (
             // Fallback when video fails to load
             <div className="flex flex-col items-center justify-center">
-              <svg width="120\" height="120\" viewBox="0 0 24 24\" fill="none\" stroke="currentColor\" strokeWidth="2\" strokeLinecap="round\" strokeLinejoin="round\" className="text-gray-400">
+              <svg width="120" height="120" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-gray-400">
                 <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
-                <circle cx="12\" cy="12\" r="3"/>
-                <line x1="2\" y1="2\" x2="22\" y2="22"/>
+                <circle cx="12" cy="12" r="3"/>
+                <line x1="2" y1="2" x2="22" y2="22"/>
               </svg>
               <p className="text-gray-600 mt-4">Video could not be loaded</p>
               {isMobile && (
@@ -595,7 +656,7 @@ const View = () => {
   }
 
   // Image ad display
-  if (adDesign?.image_url && !redirectUrl) {
+  if (adDesign?.image_url && !isBlobUrl(adDesign.image_url) && !redirectUrl) {
     return (
       <div 
         className="min-h-screen flex flex-col items-center justify-center p-0 m-0 overflow-hidden"
@@ -698,8 +759,8 @@ const View = () => {
             )}
           </div>
         )}
-        {(!redirectUrl && !adDesign?.image_url && !adDesign?.video_url) || 
-         (imageError && videoError) && (
+        {(!redirectUrl && (!adDesign?.image_url || isBlobUrl(adDesign?.image_url)) && 
+         (!adDesign?.video_url || isBlobUrl(adDesign?.video_url))) && (
           <div>
             <p className="text-lg font-medium p-4 bg-error-100 text-error-700 rounded-lg">
               This ad doesn't have any content to display
