@@ -60,9 +60,12 @@ const AdBuilder = () => {
   });
   const [isUploading, setIsUploading] = useState(false);
   const [debugInfo, setDebugInfo] = useState<string[]>([]);
+  // Track available storage buckets
+  const [storageBuckets, setStorageBuckets] = useState<string[]>([]);
 
   useEffect(() => {
     fetchDesigns();
+    checkAvailableBuckets();
   }, []);
 
   useEffect(() => {
@@ -85,6 +88,29 @@ const AdBuilder = () => {
   const addDebug = (message: string) => {
     console.log(`[AdBuilder Debug] ${message}`);
     setDebugInfo(prev => [...prev, message]);
+  };
+
+  // Check available storage buckets
+  const checkAvailableBuckets = async () => {
+    try {
+      const { data: buckets, error } = await supabase.storage.listBuckets();
+      
+      if (error) {
+        addDebug(`Error listing buckets: ${error.message}`);
+        return;
+      }
+      
+      const bucketNames = buckets.map(b => b.name);
+      setStorageBuckets(bucketNames);
+      addDebug(`Available storage buckets: ${bucketNames.join(', ') || 'none'}`);
+      
+      // If public bucket doesn't exist, show a warning to the user
+      if (!bucketNames.includes('public')) {
+        toast.error('Storage not properly configured. Some features may not work.', { duration: 5000 });
+      }
+    } catch (error: any) {
+      addDebug(`Error checking buckets: ${error.message}`);
+    }
   };
 
   const fetchDesigns = async () => {
@@ -183,58 +209,105 @@ const AdBuilder = () => {
         }
       }
       
-      // Check if the bucket exists before attempting to upload
-      try {
-        const { data: buckets, error: bucketError } = await supabase.storage.listBuckets();
+      // Get list of available buckets
+      const { data: buckets, error: bucketError } = await supabase.storage.listBuckets();
+      
+      if (bucketError) {
+        addDebug(`Error listing buckets: ${bucketError.message}`);
+        throw new Error(`Unable to access storage: ${bucketError.message}`);
+      }
+      
+      const bucketNames = buckets.map(b => b.name);
+      addDebug(`Available storage buckets: ${bucketNames.join(', ')}`);
+      
+      // Try to find an available bucket to use
+      let bucketToUse = 'public';
+      let uploadResult;
+      let uploadError;
+      
+      // First try 'public' bucket if it exists
+      if (bucketNames.includes('public')) {
+        addDebug('Attempting upload to "public" bucket');
+        uploadResult = await supabase.storage
+          .from('public')
+          .upload(filePath, fileToUpload);
+          
+        uploadError = uploadResult.error;
         
-        if (bucketError) {
-          addDebug(`Error listing buckets: ${bucketError.message}`);
-          throw new Error(`Unable to access storage: ${bucketError.message}`);
+        if (!uploadError) {
+          addDebug('Upload to "public" bucket successful');
+          const { data: { publicUrl } } = supabase.storage
+            .from('public')
+            .getPublicUrl(filePath);
+          
+          addDebug(`Generated public URL: ${publicUrl}`);
+          return publicUrl;
+        } else {
+          addDebug(`Upload to "public" bucket failed: ${uploadError.message}`);
         }
+      }
+      
+      // If 'public' bucket doesn't exist or upload failed, try 'storage' bucket
+      if (bucketNames.includes('storage')) {
+        addDebug('Attempting upload to "storage" bucket');
+        bucketToUse = 'storage';
+        uploadResult = await supabase.storage
+          .from('storage')
+          .upload(filePath, fileToUpload);
+          
+        uploadError = uploadResult.error;
         
-        // Check if our target bucket exists
-        const publicBucketExists = buckets.some(b => b.name === 'public');
-        
-        // If public bucket doesn't exist, try storage bucket
-        if (!publicBucketExists) {
-          addDebug(`Bucket 'public' not found. Trying to use default storage.`);
-          const { data: storageCheck, error: storageError } = await supabase.storage
+        if (!uploadError) {
+          addDebug('Upload to "storage" bucket successful');
+          const { data: { publicUrl } } = supabase.storage
             .from('storage')
-            .list();
-            
-          if (storageError) {
-            addDebug(`Default storage check failed: ${storageError.message}`);
-            throw new Error('No available storage buckets found. Please contact support.');
-          }
+            .getPublicUrl(filePath);
+          
+          addDebug(`Generated public URL: ${publicUrl}`);
+          return publicUrl;
+        } else {
+          addDebug(`Upload to "storage" bucket failed: ${uploadError.message}`);
         }
-      } catch (bucketCheckError: any) {
-        addDebug(`Error checking bucket: ${bucketCheckError.message}`);
-        // Continue with the upload attempt as the bucket might still exist
       }
       
-      // Upload image to Supabase Storage
-      const { data, error } = await supabase.storage
-        .from('public')
-        .upload(filePath, fileToUpload);
-      
-      if (error) {
-        addDebug(`Storage upload error: ${error.message}`);
-        throw error;
+      // Try any other available bucket as a last resort
+      if (bucketNames.length > 0 && !bucketNames.includes('public') && !bucketNames.includes('storage')) {
+        bucketToUse = bucketNames[0]; // Use the first available bucket
+        addDebug(`Attempting upload to "${bucketToUse}" bucket as fallback`);
+        
+        uploadResult = await supabase.storage
+          .from(bucketToUse)
+          .upload(filePath, fileToUpload);
+          
+        uploadError = uploadResult.error;
+        
+        if (!uploadError) {
+          addDebug(`Upload to "${bucketToUse}" bucket successful`);
+          const { data: { publicUrl } } = supabase.storage
+            .from(bucketToUse)
+            .getPublicUrl(filePath);
+          
+          addDebug(`Generated public URL: ${publicUrl}`);
+          return publicUrl;
+        } else {
+          addDebug(`Upload to "${bucketToUse}" bucket failed: ${uploadError.message}`);
+        }
       }
       
-      addDebug(`Image uploaded successfully. Path: ${data?.path}`);
+      // If we've tried all options and still failed
+      if (!bucketNames.length) {
+        addDebug('No storage buckets found in the project');
+        toast.error('Storage is not configured in your Supabase project. Please create a bucket named "public".');
+      } else {
+        addDebug('All upload attempts failed');
+        toast.error('Failed to upload image to any available storage bucket');
+      }
       
-      // Get public URL
-      const { data: { publicUrl } } = supabase.storage
-        .from('public')
-        .getPublicUrl(filePath);
-      
-      addDebug(`Generated public URL: ${publicUrl}`);
-      return publicUrl;
+      throw new Error('No available storage buckets found or all upload attempts failed');
     } catch (error: any) {
       console.error('Error uploading image:', error);
       addDebug(`Upload failed: ${error.message}`);
-      toast.error('Failed to upload image');
+      toast.error('Failed to upload image: ' + error.message);
       return null;
     } finally {
       setIsUploading(false);
@@ -744,6 +817,28 @@ const AdBuilder = () => {
           ))}
         </div>
       )}
+
+      {/* Storage configuration warning */}
+      {storageBuckets.length === 0 && (
+        <Card className="mt-6 bg-amber-50 border-amber-200">
+          <CardContent className="p-4">
+            <div className="flex items-center">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-amber-500 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <div>
+                <h3 className="font-medium text-amber-800">Storage Not Configured</h3>
+                <p className="text-sm text-amber-700 mt-1">
+                  Your Supabase project doesn't have any storage buckets configured. Image uploads will not work.
+                </p>
+                <p className="text-sm text-amber-700 mt-2">
+                  To fix this, go to your Supabase dashboard, navigate to Storage, and create a bucket named "public" with appropriate permissions.
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 
@@ -1013,6 +1108,28 @@ const AdBuilder = () => {
             </Button>
           </CardFooter>
         </Card>
+
+        {/* Storage configuration warning */}
+        {storageBuckets.length === 0 && (
+          <Card className="bg-amber-50 border-amber-200">
+            <CardContent className="p-4">
+              <div className="flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-amber-500 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                <div>
+                  <h3 className="font-medium text-amber-800">Storage Not Configured</h3>
+                  <p className="text-sm text-amber-700 mt-1">
+                    Your Supabase project doesn't have any storage buckets configured. Image uploads will not work.
+                  </p>
+                  <p className="text-sm text-amber-700 mt-2">
+                    To fix this, go to your Supabase dashboard, navigate to Storage, and create a bucket named "public" with appropriate permissions.
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );
