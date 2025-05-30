@@ -613,10 +613,10 @@ const View = () => {
           {videoError ? (
             // Fallback when video fails to load
             <div className="flex flex-col items-center justify-center">
-              <svg width="120" height="120" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-gray-400">
+              <svg width="120\" height="120\" viewBox="0 0 24 24\" fill="none\" stroke="currentColor\" strokeWidth="2\" strokeLinecap="round\" strokeLinejoin="round\" className="text-gray-400">
                 <path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/>
-                <circle cx="12" cy="12" r="3"/>
-                <line x1="2" y1="2" x2="22" y2="22"/>
+                <circle cx="12\" cy="12\" r="3"/>
+                <line x1="2\" y1="2\" x2="22\" y2="22"/>
               </svg>
               <p className="text-gray-600 mt-4">Video could not be loaded</p>
               {isMobile && (
